@@ -328,8 +328,31 @@ local function disconnectRuntimeConnections()
 	end
 end
 
+local BLUR_DOF_NAME = "SydeBlurDOF"
+local BIND_ROOT_NAME = "neon"
+
+local function cleanupBlurArtifacts()
+	for _, child in ipairs(camera:GetChildren()) do
+		if child:IsA("Folder") and child.Name == BIND_ROOT_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+
+	local lighting = game:GetService("Lighting")
+	for _, child in ipairs(lighting:GetChildren()) do
+		if child:IsA("DepthOfFieldEffect") and child.Name == BLUR_DOF_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+end
+
 local function cleanupSydeUi(markerName)
 	disconnectRuntimeConnections()
+	cleanupBlurArtifacts()
 	for _, gui in coregui:GetChildren() do
 		if gui:IsA("ScreenGui") and gui:FindFirstChild(markerName) then
 			pcall(function()
@@ -616,9 +639,11 @@ do
 	end
 end
 
+cleanupBlurArtifacts()
+
 local binds = {}
 local root = Instance.new('Folder', camera)
-root.Name = 'neon'
+root.Name = BIND_ROOT_NAME
 
 
 local GenUid; do -- Generate unique names for RenderStepped bindings
@@ -779,6 +804,7 @@ function syde:BindFrame(frame, properties)
 	binds[frame] = {
 		uid = uid;
 		parts = parts;
+		folder = f;
 	}
 	return binds[frame].parts
 end
@@ -804,6 +830,9 @@ function syde:UnbindFrame(frame)
 		RunService:UnbindFromRenderStep(cb.uid)
 		for _, v in pairs(cb.parts) do
 			v:Destroy()
+		end
+		if cb.folder and cb.folder.Parent then
+			cb.folder:Destroy()
 		end
 		binds[frame] = nil
 	else
@@ -2436,7 +2465,41 @@ local uiclosed = false
 local userinfodisabled = false
 local intro = false
 local bluron = false
+local blurDepthOfField = nil
 local glow = false
+
+local function destroyBlurDepthOfField()
+	if blurDepthOfField and blurDepthOfField.Parent then
+		pcall(function()
+			blurDepthOfField:Destroy()
+		end)
+	end
+	blurDepthOfField = nil
+
+	local lighting = game:GetService("Lighting")
+	for _, child in ipairs(lighting:GetChildren()) do
+		if child:IsA("DepthOfFieldEffect") and child.Name == BLUR_DOF_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+end
+
+local function createBlurDepthOfField()
+	destroyBlurDepthOfField()
+
+	local dof = Instance.new("DepthOfFieldEffect")
+	dof.Name = BLUR_DOF_NAME
+	dof.Parent = game:GetService("Lighting")
+	dof.Enabled = true
+	dof.FocusDistance = 51.6
+	dof.InFocusRadius = 50
+	dof.NearIntensity = 1
+	dof.FarIntensity = 0
+	blurDepthOfField = dof
+	return dof
+end
 
 local uitoggle = Enum.KeyCode.RightShift
 --
@@ -2899,6 +2962,7 @@ function openui()
 			Transparency = 0.98;
 			BrickColor = BrickColor.new('Institutional white');
 		})
+		createBlurDepthOfField()
 		tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.45 }):Play()
 	else
 		tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0 }):Play()
@@ -2968,7 +3032,9 @@ function closeui()
 
 
 	syde:UnbindFrame(window)
-
+	if bluron then
+		destroyBlurDepthOfField()
+	end
 
 	tweenservice:Create(window.top.functions, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1 }):Play()
 	for i,v in pairs(window.top.functions:GetChildren()) do
@@ -6611,14 +6677,7 @@ function syde:Init(library)
 						BrickColor = BrickColor.new('Institutional white');
 					})
 
-					local dof = Instance.new('DepthOfFieldEffect')
-					dof.Parent = game.Lighting
-					dof.Enabled = true
-					dof.FocusDistance = 51.6
-					dof.InFocusRadius = 50
-					dof.NearIntensity = 1
-					dof.FarIntensity = 0
-
+					createBlurDepthOfField()
 					bluron = true
 
 				else
@@ -6632,7 +6691,7 @@ function syde:Init(library)
 					window.pages.clipframe.v0.Visible = true
 
 					syde:UnbindFrame(window)
-
+					destroyBlurDepthOfField()
 					bluron = false
 				end
 			end,
