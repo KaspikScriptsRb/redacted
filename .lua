@@ -18,6 +18,58 @@ local function setParagraphTitle(para, title)
 	end)
 end
 
+local function getParagraphContent(para)
+	if not para then return nil end
+
+	local function isTitleLabel(label)
+		if not label or not label:IsA("TextLabel") then
+			return false
+		end
+		local name = label.Name:lower()
+		if name == "title" then
+			return true
+		end
+		local parent = label.Parent
+		if parent and parent.Name:lower() == "frame" and parent:FindFirstChild("title") == label then
+			return true
+		end
+		return false
+	end
+
+	local function tryLabel(node)
+		if node and (node:IsA("TextLabel") or node:IsA("TextBox")) and not isTitleLabel(node) then
+			return node
+		end
+		return nil
+	end
+
+	for _, childName in ipairs({ "Content", "content", "desc", "Desc", "body", "Body", "text", "Text" }) do
+		local label = tryLabel(para:FindFirstChild(childName, true))
+		if label then
+			return label
+		end
+	end
+
+	for _, child in ipairs(para:GetDescendants()) do
+		if child:IsA("TextLabel") or child:IsA("TextBox") then
+			local name = child.Name:lower()
+			if name == "content" or name == "desc" or name == "body" or name == "text" or name == "value" then
+				if not isTitleLabel(child) then
+					return child
+				end
+			end
+		end
+	end
+
+	for _, child in ipairs(para:GetDescendants()) do
+		if (child:IsA("TextLabel") or child:IsA("TextBox")) and not isTitleLabel(child) then
+			return child
+		end
+	end
+
+	return nil
+end
+
 local function applyParagraphContent(para, paraContent, text)
 	if not paraContent or not paraContent.Parent then
 		paraContent = getParagraphContent(para)
@@ -29,35 +81,9 @@ local function applyParagraphContent(para, paraContent, text)
 end
 
 local function deferParagraphUpdate(callback)
-	task.spawn(function()
+	task.defer(function()
 		pcall(callback)
 	end)
-end
-
-local function getParagraphContent(para)
-	if not para then return nil end
-
-	local direct = para:FindFirstChild("Content") or para:FindFirstChild("content") or para:FindFirstChild("desc")
-	if direct and direct:IsA("TextLabel") then
-		return direct
-	end
-
-	for _, child in ipairs(para:GetDescendants()) do
-		if child:IsA("TextLabel") then
-			local name = child.Name:lower()
-			if name == "content" or name == "desc" or name == "body" or name == "text" then
-				return child
-			end
-		end
-	end
-
-	for _, child in ipairs(para:GetDescendants()) do
-		if child:IsA("TextLabel") and child.Name:lower() ~= "title" then
-			return child
-		end
-	end
-
-	return nil
 end
 
 local inputservice =	game:GetService("InsertService")
@@ -6197,6 +6223,7 @@ function syde:Init(library)
 				end
 
 				ParagraphSettings.Instance = Para
+				ParagraphSettings.ContentLabel = paraContent
 
 				return ParagraphSettings
 			end
@@ -9026,6 +9053,7 @@ function syde:Init(library)
 			end
 
 			ParagraphSettings.Instance = Para
+			ParagraphSettings.ContentLabel = paraContent
 
 			return ParagraphSettings
 		end
