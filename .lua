@@ -75,6 +75,7 @@ local function applyParagraphContent(para, paraContent, text)
 		paraContent = getParagraphContent(para)
 	end
 	if paraContent then
+		paraContent.RichText = true
 		paraContent.Text = text or ""
 	end
 	return paraContent
