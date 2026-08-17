@@ -658,6 +658,39 @@ local DrawQuad; do
 	local acos, max, pi, sqrt = math.acos, math.max, math.pi, math.sqrt
 	local sz = 0.2
 
+	local function getWedgeMesh(part)
+		if not part then
+			return nil
+		end
+		local mesh = part:FindFirstChild("WedgeMesh")
+		if mesh and mesh:IsA("SpecialMesh") then
+			return mesh
+		end
+		return nil
+	end
+
+	local function createWedgePart()
+		local part = Instance.new("Part")
+		part.FormFactor = "Custom"
+		part.TopSurface = 0
+		part.BottomSurface = 0
+		part.Anchored = true
+		part.CanCollide = false
+		part.Material = "Glass"
+		part.Size = Vector3.new(sz, sz, sz)
+		local mesh = Instance.new("SpecialMesh", part)
+		mesh.MeshType = Enum.MeshType.Wedge
+		mesh.Name = "WedgeMesh"
+		return part
+	end
+
+	local function ensureWedgePart(part)
+		if part and part.Parent and getWedgeMesh(part) then
+			return part
+		end
+		return createWedgePart()
+	end
+
 	function DrawTriangle(v1, v2, v3, p0, p1) -- I think Stravant wrote this function
 		local s1 = (v1 - v2).magnitude
 		local s2 = (v2 - v3).magnitude
@@ -700,26 +733,18 @@ local DrawQuad; do
 		end
 		cf1 = cf1 * CFrame.new(0, perp/2, dif_para/2)
 
-		if not p0 then
-			p0 = Instance.new('Part')
-			p0.FormFactor = 'Custom'
-			p0.TopSurface = 0
-			p0.BottomSurface = 0
-			p0.Anchored = true
-			p0.CanCollide = false
-			p0.Material = 'Glass'
-			p0.Size = Vector3.new(sz, sz, sz)
-			local mesh = Instance.new('SpecialMesh', p0)
-			mesh.MeshType = 2
-			mesh.Name = 'WedgeMesh'
+		p0 = ensureWedgePart(p0)
+		local mesh0 = getWedgeMesh(p0)
+		if mesh0 then
+			mesh0.Scale = Vector3.new(0, perp / sz, para / sz)
 		end
-		p0.WedgeMesh.Scale = Vector3.new(0, perp/sz, para/sz)
 		p0.CFrame = cf0
 
-		if not p1 then
-			p1 = p0:clone()
+		p1 = ensureWedgePart(p1)
+		local mesh1 = getWedgeMesh(p1)
+		if mesh1 then
+			mesh1.Scale = Vector3.new(0, perp / sz, dif_para / sz)
 		end
-		p1.WedgeMesh.Scale = Vector3.new(0, perp/sz, dif_para/sz)
 		p1.CFrame = cf1
 
 		return p0, p1
@@ -760,6 +785,9 @@ function syde:BindFrame(frame, properties)
 	end
 
 	local function UpdateOrientation(fetchProps)
+		if not frame or not frame.Parent then
+			return
+		end
 		local zIndex = 1 - 0.05*frame.ZIndex
 		-- the transparency inversion bug still surfaces when there's z-fighting
 		local tl, br = frame.AbsolutePosition, frame.AbsolutePosition + frame.AbsoluteSize
@@ -8702,9 +8730,11 @@ function syde:Init(library)
 		function initelement:TextInput(TextInput)
 			local data = {
 				Title = TextInput.Title or "Text Input",
+				Description = TextInput.Description or "",
 				PlaceHolder = TextInput.PlaceHolder or "Enter text...",
+				StarterValue = TextInput.StarterValue,
 				NumbersOnly = TextInput.NumberOnly or false,
-				ClearOnLost = TextInput.ClearOnLost == nil and true or TextInput.ClearOnLost,
+				ClearOnLost = TextInput.ClearOnLost == true,
 				--	MaxSize = TextInput.MaxSize or 100,
 				CallBack = TextInput.CallBack,
 			}
@@ -8721,6 +8751,39 @@ function syde:Init(library)
 			local defaultHeight = 32
 			--	local maxHeight = data.MaxSize
 			local ignoreNextClear = false
+
+			if typeof(data.StarterValue) == "string" and data.StarterValue ~= "" then
+				textBox.Text = data.StarterValue
+				textBox.ClearTextOnFocus = false
+			end
+
+			local descLabel = textinput:FindFirstChild("desc")
+			if descLabel then
+				if data.Description ~= "" then
+					descLabel.Text = data.Description
+					descLabel.Visible = true
+					descLabel.TextWrapped = true
+
+					local function updateDescSize()
+						local textSize = game:GetService("TextService"):GetTextSize(
+							descLabel.Text,
+							descLabel.TextSize,
+							descLabel.Font,
+							Vector2.new(descLabel.AbsoluteSize.X, math.huge)
+						)
+
+						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
+						local newInputSize = UDim2.new(textinput.Size.X.Scale, textinput.Size.X.Offset, 0, textinput.title.Size.Y.Offset + textSize.Y + textinput.TextFrame.Size.Y.Offset + 20)
+						tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+						tweenservice:Create(textinput, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newInputSize }):Play()
+					end
+
+					updateDescSize()
+					descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateDescSize)
+				else
+					descLabel.Visible = false
+				end
+			end
 
 
 
@@ -10535,6 +10598,409 @@ function syde:Init(library)
 	return tbdata
 
 
+end
+
+function syde.setHubParagraph(widget, content, title)
+	if not widget or not widget.Set then
+		return
+	end
+	pcall(function()
+		widget:Set(content or "", title)
+	end)
+end
+
+function syde.enableParagraphRichText(widget)
+	if not widget then
+		return
+	end
+	pcall(function()
+		local contentLabel = widget.ContentLabel
+		if contentLabel then
+			contentLabel.RichText = true
+		end
+	end)
+end
+
+function syde:CreateHub(config)
+	config = config or {}
+	local brand = config.brand or {}
+	local hubStore = config.hubStore or {}
+	hubStore.Modules = hubStore.Modules or {}
+	hubStore.paragraphBootstraps = hubStore.paragraphBootstraps or {}
+	hubStore.ToggleKey = hubStore.ToggleKey or Enum.KeyCode.RightShift
+	local getGuiRoot = config.getGuiRoot
+	local _pendingTabs = {}
+	local _pendingOrder = {}
+	local _sydeWindow = nil
+	local _sydeTabs = {}
+	local _moduleFlags = {}
+	local _initialized = false
+	local function getSydeTabPage(title)
+		if typeof(getGuiRoot) ~= "function" then
+			return nil
+		end
+		local root = getGuiRoot()
+		if not root then
+			return nil
+		end
+		local pages = root:FindFirstChild("pages", true)
+		return pages and pages:FindFirstChild(title)
+	end
+	local function multiselectToString(val)
+		if type(val) == "string" then
+			return val
+		end
+		if type(val) ~= "table" then
+			return ""
+		end
+		local parts = {}
+		for k, v in pairs(val) do
+			if type(v) == "string" then
+				table.insert(parts, v)
+			elseif v == true and type(k) == "string" then
+				table.insert(parts, k)
+			end
+		end
+		table.sort(parts)
+		return table.concat(parts, ",")
+	end
+	local function parseIconId(icon)
+		if not icon then
+			return "7059346373"
+		end
+		return tostring(icon):match("(%d+)") or "7059346373"
+	end
+	local function makeFlag(tabId, mod, opt)
+		return (tabId .. "_" .. mod.name .. "_" .. (opt and opt.label or "")):gsub("%s+", "_")
+	end
+	local function buildOption(tab, tabId, mod, opt)
+		local flagName = makeFlag(tabId, mod, opt)
+		if opt.type == "button" then
+			tab:Button({
+				Title = opt.label,
+				Description = opt.desc or "",
+				CallBack = function()
+					if opt.callback then
+						pcall(opt.callback)
+					end
+				end,
+			})
+		elseif opt.type == "toggle" or opt.type == "checkbox" then
+			opt._flag = tab:Toggle({
+				Title = opt.label,
+				Description = opt.desc or "",
+				Value = opt.value == true,
+				Config = true,
+				Flag = flagName,
+				CallBack = function(state)
+					opt.value = state
+					if opt.callback then
+						pcall(opt.callback, state)
+					end
+				end,
+			})
+		elseif opt.type == "slider" then
+			local starterVal = opt.value
+			if starterVal == nil then
+				starterVal = opt.min or 0
+			end
+			tab:Slider({
+				Title = opt.label,
+				Description = opt.desc or "",
+				Sliders = {
+					{
+						Title = opt.label,
+						Range = { opt.min or 0, opt.max or 100 },
+						Increment = opt.increment or 1,
+						StarterValue = starterVal,
+						Config = true,
+						Flag = flagName,
+						CallBack = function(val)
+							opt.value = val
+							if opt.callback then
+								pcall(opt.callback, val)
+							end
+						end,
+					},
+				},
+			})
+			opt.value = starterVal
+			if opt.callback then
+				pcall(opt.callback, starterVal)
+			end
+		elseif opt.type == "dropdown" then
+			local starter = opt.value
+			if starter == "None" or starter == "" then
+				starter = nil
+			end
+			opt._flag = tab:Dropdown({
+				Title = opt.label,
+				Options = opt.list or {},
+				StarterOption = starter,
+				PlaceHolder = "Select...",
+				Config = true,
+				Flag = flagName,
+				CallBack = function(val)
+					opt.value = val
+					if opt.callback then
+						pcall(opt.callback, val)
+					end
+				end,
+			})
+			if opt.onCreate then
+				pcall(opt.onCreate, opt._flag)
+			end
+		elseif opt.type == "multiselect" then
+			opt._flag = tab:Dropdown({
+				Title = opt.label,
+				Options = opt.list or {},
+				Multi = true,
+				PlaceHolder = "Select options...",
+				Config = true,
+				Flag = flagName,
+				CallBack = function(val)
+					local str = multiselectToString(val)
+					opt.value = str
+					if opt.callback then
+						pcall(opt.callback, str)
+					end
+				end,
+			})
+			if opt.onCreate then
+				pcall(opt.onCreate, opt._flag)
+			end
+		elseif opt.type == "textbox" then
+			tab:TextInput({
+				Title = opt.label,
+				PlaceHolder = opt.placeholder or "",
+				NumberOnly = opt.numberOnly == true,
+				CallBack = function(text, enter)
+					opt.value = text
+					if opt.callback then
+						pcall(opt.callback, text, enter)
+					end
+				end,
+			})
+		elseif opt.type == "paragraph" then
+			local widget = tab:Paragraph({
+				Title = opt.title or opt.label or "",
+				Content = opt.content or "",
+			})
+			opt._widget = widget
+			if opt.onCreate then
+				pcall(opt.onCreate, widget)
+			end
+		elseif opt.type == "label" then
+			local widget = tab:Label(opt.label or opt.content or "", opt.align or "Left")
+			opt._widget = widget
+			if opt.onCreate then
+				pcall(opt.onCreate, widget)
+			end
+		elseif opt.type == "section" then
+			tab:Section(opt.label or opt.title or "", parseIconId(opt.icon))
+		elseif opt.type == "color" or opt.type == "colorpicker" then
+			opt._flag = tab:ColorPicker({
+				Title = opt.label,
+				Color = opt.value or Color3.fromRGB(255, 255, 255),
+				Flag = flagName,
+				CallBack = function(color)
+					opt.value = color
+					if opt.callback then
+						pcall(opt.callback, color)
+					end
+				end,
+			})
+		end
+	end
+	local function buildModule(tab, tabId, mod, tabIcon)
+		local sectionTitle = mod.name
+		if mod.badge and mod.badge.text then
+			sectionTitle = mod.name .. "  [" .. mod.badge.text .. "]"
+		end
+		tab:Section(sectionTitle, parseIconId(mod.icon or tabIcon))
+		if mod.desc and mod.desc ~= "" and mod.notoggle then
+			tab:Label(mod.desc, "Left")
+		end
+		if not mod.notoggle then
+			local flagName = (tabId .. "_" .. mod.name):gsub("%s+", "_")
+			local flag = tab:Toggle({
+				Title = mod.name,
+				Description = mod.desc or "",
+				Value = mod.on == true,
+				Config = true,
+				Flag = flagName,
+				CallBack = function(state)
+					mod.on = state
+					if mod.callback then
+						pcall(mod.callback, state)
+					end
+				end,
+			})
+			_moduleFlags[tabId .. "::" .. mod.name] = flag
+			mod._flag = flag
+		end
+		if mod.opts then
+			for _, opt in mod.opts do
+				buildOption(tab, tabId, mod, opt)
+			end
+		end
+	end
+	local function processPendingTabs()
+		for _, tabId in _pendingOrder do
+			local def = _pendingTabs[tabId]
+			if def then
+				local tab = _sydeWindow:InitTab({ Title = tabId })
+				_sydeTabs[tabId] = tab
+				if def.customCallback then
+					tab:Section("Scanner", parseIconId(def.icon))
+					task.defer(function()
+						local page = getSydeTabPage(tabId)
+						if page then
+							local host = Instance.new("Frame")
+							host.Name = "CustomTabHost"
+							host.Size = UDim2.new(1, 0, 0, 400)
+							host.AutomaticSize = Enum.AutomaticSize.Y
+							host.BackgroundTransparency = 1
+							host.BorderSizePixel = 0
+							host.Parent = page
+							pcall(def.customCallback, host)
+						end
+					end)
+				end
+				local mods = hubStore.Modules[tabId]
+				if mods then
+					for _, mod in mods do
+						buildModule(tab, tabId, mod, def.icon)
+					end
+				end
+			end
+		end
+		local settingsMods = hubStore.Modules.Settings
+		if settingsMods and #settingsMods > 0 and not _sydeTabs.Settings then
+			local tab = _sydeWindow:InitTab({ Title = "Settings" })
+			_sydeTabs.Settings = tab
+			for _, mod in settingsMods do
+				buildModule(tab, "Settings", mod, "7059346373")
+			end
+		end
+	end
+	local hub = { tabDefs = {} }
+	function hub:CreateTab(tabId, icon, customCallback)
+		table.insert(self.tabDefs, { id = tabId, icon = icon, customCallback = customCallback })
+		_pendingTabs[tabId] = { customCallback = customCallback, icon = icon }
+		table.insert(_pendingOrder, tabId)
+		hubStore.Modules[tabId] = hubStore.Modules[tabId] or {}
+	end
+	function hub:CreateModule(tabId, moduleData)
+		hubStore.Modules[tabId] = hubStore.Modules[tabId] or {}
+		table.insert(hubStore.Modules[tabId], moduleData)
+	end
+	function hub:Notify(text, _icon)
+		syde:Notify({
+			Title = brand.Name or "Hub",
+			Content = tostring(text):gsub("<[^>]+>", ""),
+			Duration = 3,
+			Icon = brand.Logo,
+		})
+	end
+	function hub:Toggle()
+		pcall(function()
+			if ToggleUI then
+				ToggleUI()
+			end
+		end)
+	end
+	function hub:SetModuleState(tabId, moduleName, isOn)
+		local mods = hubStore.Modules[tabId]
+		if not mods then
+			return
+		end
+		for _, mod in mods do
+			if mod.name == moduleName then
+				mod.on = isOn
+				local flag = _moduleFlags[tabId .. "::" .. moduleName]
+				if flag and flag.Set then
+					pcall(function()
+						flag:Set(isOn)
+					end)
+				elseif mod.callback then
+					pcall(mod.callback, isOn)
+				end
+				return
+			end
+		end
+	end
+	function hub:SetOption(tabId, moduleName, optionLabel, newValue)
+		local mods = hubStore.Modules[tabId]
+		if not mods then
+			return
+		end
+		for _, mod in mods do
+			if mod.name == moduleName and mod.opts then
+				for _, opt in mod.opts do
+					if opt.label == optionLabel then
+						opt.value = newValue
+						if opt._flag and opt._flag.Set then
+							pcall(function()
+								opt._flag:Set(newValue == true)
+							end)
+						end
+						if opt.callback then
+							pcall(opt.callback, newValue)
+						end
+						return
+					end
+				end
+			end
+		end
+	end
+	function hub:Init(title, _a, _b, _logo)
+		if _initialized then
+			return
+		end
+		_initialized = true
+		syde:Load({
+			Logo = brand.Logo,
+			Name = title or brand.Name,
+			Status = "Stable",
+			Accent = brand.Accent,
+			HitBox = brand.Accent,
+			Socials = { Discord = brand.Discord },
+			ConfigurationSaving = {
+				Enabled = true,
+				FolderName = brand.ConfigFolder,
+				FileName = brand.ConfigFile,
+			},
+		})
+		_sydeWindow = syde:Init({
+			Title = title or brand.Name,
+			SubText = brand.Subtitle,
+			Home = {
+				Enabled = true,
+				hTitle = title or brand.Name,
+				hSubText = brand.Subtitle,
+				profileImage = brand.Logo,
+			},
+			QuickActions = false,
+		})
+		processPendingTabs()
+		task.spawn(function()
+			task.wait(0.2)
+			local bootstraps = hubStore.paragraphBootstraps
+			if bootstraps then
+				for _, fn in bootstraps do
+					pcall(fn)
+				end
+			end
+		end)
+		syde:Notify({
+			Title = title or brand.Name,
+			Content = (brand.Subtitle or "") .. " loaded. Press RightShift to toggle the menu.",
+			Duration = 5,
+			Icon = brand.Logo,
+		})
+	end
+	return hub, hubStore
 end
 
 return syde
