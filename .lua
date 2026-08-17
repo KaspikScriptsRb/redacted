@@ -98,6 +98,79 @@ local player =          game:GetService('Players')
 local textservice =     game:GetService('TextService')
 local coregui =         (gethui and gethui()) or game:GetService("CoreGui")
 
+local PARAGRAPH_PADDING = 18
+local PARAGRAPH_CONTENT_EXTRA = 10
+
+local function getParagraphTitleHeight(para)
+	local height = 34
+	pcall(function()
+		local titleFrame = para:FindFirstChild("Frame")
+		local titleLabel = titleFrame and titleFrame:FindFirstChild("title") or para:FindFirstChild("title")
+		if titleLabel and titleLabel:IsA("GuiObject") then
+			local titleHeight = titleLabel.AbsoluteSize.Y
+			if titleHeight > 0 then
+				height = titleHeight
+			elseif titleLabel:IsA("TextLabel") then
+				height = math.max(titleLabel.TextBounds.Y, 20)
+			end
+		end
+		if titleFrame and titleFrame:IsA("GuiObject") then
+			local frameHeight = titleFrame.AbsoluteSize.Y
+			if frameHeight > height then
+				height = frameHeight
+			end
+		end
+	end)
+	return height
+end
+
+local function getParagraphContentHeight(contentLabel)
+	if not contentLabel then
+		return 16
+	end
+	local text = contentLabel.Text or ""
+	local lineCount = math.max(1, select(2, text:gsub("\n", "\n")) + 1)
+	local boundsHeight = math.max(contentLabel.TextBounds.Y, 16)
+	local richTextPad = math.ceil(lineCount * 1.5) + PARAGRAPH_CONTENT_EXTRA
+	return boundsHeight + richTextPad
+end
+
+local function applyParagraphSize(para, paraContent, animate)
+	if not para or not paraContent or not paraContent.Parent then
+		return
+	end
+	paraContent.RichText = true
+	paraContent.TextWrapped = true
+	paraContent.TextTruncate = Enum.TextTruncate.None
+	paraContent.ClipsDescendants = false
+	para.ClipsDescendants = false
+	local contentHeight = getParagraphContentHeight(paraContent)
+	local newDescSize = UDim2.new(1, -20, 0, contentHeight)
+	local newButtonSize = UDim2.new(para.Size.X.Scale, para.Size.X.Offset, 0, getParagraphTitleHeight(para) + contentHeight + PARAGRAPH_PADDING)
+	if animate then
+		local descTween = tweenservice:Create(paraContent, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
+		descTween:Play()
+		local buttonTween = tweenservice:Create(para, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
+		buttonTween:Play()
+	else
+		paraContent.Size = newDescSize
+		para.Size = newButtonSize
+	end
+end
+
+local function scheduleParagraphResize(para, paraContent, animate)
+	applyParagraphSize(para, paraContent, animate)
+	task.defer(function()
+		applyParagraphSize(para, paraContent, false)
+		task.delay(0.1, function()
+			applyParagraphSize(para, paraContent, false)
+		end)
+		task.delay(0.35, function()
+			applyParagraphSize(para, paraContent, false)
+		end)
+	end)
+end
+
 -- update check
 local update = false
 if update then
@@ -6188,30 +6261,22 @@ function syde:Init(library)
 				end)
 				Para:SetAttribute("Searchable", true)
 
-				local function updateSize()
+				local function updateSize(animate)
 					pcall(function()
 						if not paraContent or not paraContent.Parent then
 							return
 						end
-						local width = math.max(paraContent.AbsoluteSize.X, 1)
-						local textSize = textservice:GetTextSize(
-							paraContent.Text,
-							paraContent.TextSize,
-							paraContent.Font,
-							Vector2.new(width, math.huge)
-						)
-						local newDescSize = UDim2.new(1, -20, 0, textSize.Y)
-						local newButtonSize = UDim2.new(Para.Size.X.Scale, Para.Size.X.Offset, 0, textSize.Y + 120)
-						local descTween = tweenservice:Create(paraContent, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-						descTween:Play()
-						local buttonTween = tweenservice:Create(Para, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-						buttonTween:Play()
+						applyParagraphSize(Para, paraContent, animate == true)
 					end)
 				end
 
-				updateSize()
+				updateSize(false)
 
-				paraContent:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+				paraContent:GetPropertyChangedSignal("TextBounds"):Connect(function()
+					task.defer(function()
+						updateSize(false)
+					end)
+				end)
 
 				local ParagraphSettings = {}
 
@@ -6219,7 +6284,7 @@ function syde:Init(library)
 					deferParagraphUpdate(function()
 						setParagraphTitle(Para, title)
 						paraContent = applyParagraphContent(Para, paraContent, text)
-						updateSize()
+						scheduleParagraphResize(Para, paraContent, true)
 					end)
 				end
 
@@ -9013,24 +9078,12 @@ function syde:Init(library)
 				warn("[Syde] Paragraph template is missing a content label")
 				return { Set = function() end, Instance = Para }
 			end
-			local function updateSize()
+			local function updateSize(animate)
 				pcall(function()
 					if not paraContent or not paraContent.Parent then
 						return
 					end
-					local width = math.max(paraContent.AbsoluteSize.X, 1)
-					local textSize = textservice:GetTextSize(
-						paraContent.Text,
-						paraContent.TextSize,
-						paraContent.Font,
-						Vector2.new(width, math.huge)
-					)
-					local newDescSize = UDim2.new(1, -20, 0, textSize.Y)
-					local newButtonSize = UDim2.new(Para.Size.X.Scale, Para.Size.X.Offset, 0, textSize.Y + 120)
-					local descTween = tweenservice:Create(paraContent, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-					descTween:Play()
-					local buttonTween = tweenservice:Create(Para, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-					buttonTween:Play()
+					applyParagraphSize(Para, paraContent, animate == true)
 				end)
 			end
 
@@ -9039,9 +9092,13 @@ function syde:Init(library)
 			end)
 			Para:SetAttribute("Searchable", true)
 
-			updateSize()
+			updateSize(false)
 
-			paraContent:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+			paraContent:GetPropertyChangedSignal("TextBounds"):Connect(function()
+				task.defer(function()
+					updateSize(false)
+				end)
+			end)
 
 			local ParagraphSettings = {}
 
@@ -9049,7 +9106,7 @@ function syde:Init(library)
 				deferParagraphUpdate(function()
 					setParagraphTitle(Para, title)
 					paraContent = applyParagraphContent(Para, paraContent, text)
-					updateSize()
+					scheduleParagraphResize(Para, paraContent, true)
 				end)
 			end
 
