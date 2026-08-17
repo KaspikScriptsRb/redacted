@@ -130,7 +130,10 @@ local function getParagraphContentHeight(contentLabel)
 	end
 	local text = contentLabel.Text or ""
 	local lineCount = math.max(1, select(2, text:gsub("\n", "\n")) + 1)
-	local boundsHeight = math.max(contentLabel.TextBounds.Y, 16)
+	local boundsHeight = 16
+	pcall(function()
+		boundsHeight = math.max(contentLabel.TextBounds.Y, 16)
+	end)
 	local richTextPad = math.ceil(lineCount * 1.5) + PARAGRAPH_CONTENT_EXTRA
 	return boundsHeight + richTextPad
 end
@@ -1546,6 +1549,7 @@ end
 
 function syde:updateLayout(container, spacing)
 	spacing = spacing or 5
+	local ok, err = pcall(function()
 	local yOffset = 0
 	local containerWidth = container.AbsoluteSize.X 
 
@@ -1558,16 +1562,19 @@ function syde:updateLayout(container, spacing)
 	if resizing == false then
 		for _, child in ipairs(container:GetChildren()) do
 			if (child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("TextLabel") or child:IsA("TextButton")) and child.Visible then
-				--child.Size = UDim2.new(1, -10, 0, child.Size.Y.Offset) -- Full width, fixed height
-				-- child.Position = UDim2.new(0, 0, 0, yOffset)
 				tweenservice:Create(child, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
 				yOffset = yOffset + child.AbsoluteSize.Y + spacing
 			end
 		end
 	end
 
-
-	container.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+	if container:IsA("ScrollingFrame") then
+		container.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+	end
+	end)
+	if not ok then
+		return
+	end
 end
 
 local dragSpeed = 0.6
@@ -7303,24 +7310,43 @@ function syde:Init(library)
 
 
 		Page.ChildAdded:Connect(function(child)
-			child:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-				syde:updateLayout(Page, 7) 
+			if not child or not child:IsA("GuiObject") then
+				return
+			end
+			pcall(function()
+				child:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+					pcall(function()
+						syde:updateLayout(Page, 7)
+					end)
+				end)
 			end)
-			child:GetPropertyChangedSignal("Visible"):Connect(function()
+			pcall(function()
+				child:GetPropertyChangedSignal("Visible"):Connect(function()
+					pcall(function()
+						syde:updateLayout(Page, 7)
+					end)
+				end)
+			end)
+			pcall(function()
 				syde:updateLayout(Page, 7)
 			end)
-			syde:updateLayout(Page, 7)
 		end)
 
 		Page.ChildRemoved:Connect(function()
-			syde:updateLayout(Page, 7)
+			pcall(function()
+				syde:updateLayout(Page, 7)
+			end)
 		end)
 
 		Page:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-			syde:updateLayout(Page, 7)
+			pcall(function()
+				syde:updateLayout(Page, 7)
+			end)
 		end)
 
-		syde:updateLayout(Page, 7)
+		pcall(function()
+			syde:updateLayout(Page, 7)
+		end)
 
 
 
@@ -8076,15 +8102,21 @@ function syde:Init(library)
 					descLabel.TextWrapped = true
 
 					local function updateSize()
-						local textSize = textservice:GetTextSize(
-							descLabel.Text,
-							descLabel.TextSize,
-							descLabel.Font,
-							Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-						)
+						local textSize = Vector2.new(descLabel.AbsoluteSize.X, descLabel.TextSize + 4)
+						local okSize, measured = pcall(function()
+							return textservice:GetTextSize(
+								descLabel.Text,
+								descLabel.TextSize,
+								descLabel.Font,
+								Vector2.new(descLabel.AbsoluteSize.X, math.huge)
+							)
+						end)
+						if okSize and measured then
+							textSize = measured
+						end
 
 						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-						local newButtonSize = UDim2.new(toggle.Size.X.Scale, toggle.Size.X.Offset, 0, toggle.title.Size.Y.Offset + textSize.Y + 10) -- Adding extra padding
+						local newButtonSize = UDim2.new(toggle.Size.X.Scale, toggle.Size.X.Offset, 0, toggle.title.Size.Y.Offset + textSize.Y + 10)
 
 						local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
 						descTween:Play()
@@ -8093,9 +8125,13 @@ function syde:Init(library)
 						ToggleTween:Play()
 					end
 
-					updateSize()
+					pcall(updateSize)
 
-					descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+					pcall(function()
+						descLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+							pcall(updateSize)
+						end)
+					end)
 				else
 					descLabel.Visible = false
 				end
