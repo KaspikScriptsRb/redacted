@@ -1,13248 +1,11175 @@
-local getcustomasset = getcustomasset or getsynasset
-local executor = (identifyexecutor or getexecutorname or function() return "Unknown" end)()
-local Players = game:GetService("Players")
-local localPlayer = Players.LocalPlayer
-local scriptSessionStart = os.clock()
-local UIS = game:GetService("UserInputService")
-local cl = {
-	bg = Color3.fromRGB(14, 14, 14),
-	topbar = Color3.fromRGB(22, 22, 22),
-	card = Color3.fromRGB(22, 22, 22),
-	field = Color3.fromRGB(32, 32, 32),
-	text = Color3.fromRGB(230, 230, 235),
-	dim = Color3.fromRGB(140, 140, 150),
-	dark = Color3.fromRGB(80, 80, 90),
-	sep = Color3.fromRGB(40, 40, 45),
-	tog_off = Color3.fromRGB(48, 48, 48),
-	check = Color3.fromRGB(40, 40, 40),
-	tab_sel = Color3.fromRGB(30, 30, 35)
-}
-local ac = Color3.fromRGB(255, 255, 255)
-local ac2 = Color3.fromRGB(160, 160, 160)
-local TS = game:GetService("TweenService")
-local RS = game:GetService("RunService")
-local gameNetworking = nil
-local lastMoveWhitelist = 0
-local moveWhitelistGap = 0.3
-local hub
-local hubStore
-local syde
+--[[
 
-local function getGameNetworking()
-	if gameNetworking then
-		return gameNetworking
-	end
+.dP"Y8 Yb  dP 8888b.  888888 
+`Ybo."  YbdP   8I  Yb 88__   
+o.`Y8b   8P    8I  dY 88""   
+8bodP'  dP    8888Y"  888888  v0
+
+]]
+
+local function setParagraphTitle(para, title)
+	if not para or title == nil then return end
 	pcall(function()
-		gameNetworking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
+		local frame = para:FindFirstChild("Frame")
+		local label = frame and frame:FindFirstChild("title") or para:FindFirstChild("title")
+		if label then
+			label.Text = title
+		end
 	end)
-	return gameNetworking
 end
 
-local function firePrompt(prompt)
-	if not prompt then
+local function getParagraphContent(para)
+	if not para then return nil end
+
+	local function isTitleLabel(label)
+		if not label or not label:IsA("TextLabel") then
+			return false
+		end
+		local name = label.Name:lower()
+		if name == "title" then
+			return true
+		end
+		local parent = label.Parent
+		if parent and parent.Name:lower() == "frame" and parent:FindFirstChild("title") == label then
+			return true
+		end
 		return false
 	end
-	if fireproximityprompt then
-		local ok = pcall(fireproximityprompt, prompt)
-		return ok
-	end
-	local ok = pcall(function()
-		prompt:InputBegan(Enum.UserInputType.Keyboard)
-		task.wait(prompt.HoldDuration + 0.02)
-		prompt:InputEnded(Enum.UserInputType.Keyboard)
-	end)
-	return ok
-end
 
-local function whitelistMove(pos)
-	if typeof(pos) == "CFrame" then
-		pos = pos.Position
-	end
-	local net = getGameNetworking()
-	if not net or not net.Place or not net.Place.UseTeleporter then
-		return
-	end
-	pcall(function()
-		net.Place.UseTeleporter:Fire(pos)
-	end)
-end
-
-local function whitelistMoveThrottled(pos)
-	local now = os.clock()
-	if now - lastMoveWhitelist < moveWhitelistGap then
-		return
-	end
-	lastMoveWhitelist = now
-	whitelistMove(pos)
-end
-
-local function safeTeleport(cf)
-	local char = localPlayer.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return false
-	end
-	if typeof(cf) == "Vector3" then
-		cf = CFrame.new(cf)
-	end
-	hrp.CFrame = cf
-	whitelistMove(cf.Position)
-	return true
-end
-
-function destroyEspBeamEntry(entry)
-	if not entry then
-		return
-	end
-	if typeof(entry) == "Instance" then
-		pcall(function()
-			entry:Destroy()
-		end)
-		return
-	end
-	pcall(function()
-		if entry.beam then
-			entry.beam:Destroy()
+	local function tryLabel(node)
+		if node and (node:IsA("TextLabel") or node:IsA("TextBox")) and not isTitleLabel(node) then
+			return node
 		end
-	end)
-	pcall(function()
-		if entry.att0 then
-			entry.att0:Destroy()
-		end
-	end)
-	pcall(function()
-		if entry.att1 then
-			entry.att1:Destroy()
-		end
-	end)
-end
-
-function clearEspBeamTable(beamTable)
-	if not beamTable then
-		return
-	end
-	for key, entry in pairs(beamTable) do
-		destroyEspBeamEntry(entry)
-		beamTable[key] = nil
-	end
-end
-
-function styleEspBeam(beam, color)
-	if not beam then
-		return
-	end
-	beam.Texture = "rbxassetid://446111271"
-	beam.TextureSpeed = 1.5
-	beam.TextureLength = 8
-	beam.TextureMode = Enum.TextureMode.Wrap
-	beam.LightEmission = 0.75
-	beam.LightInfluence = 0
-	beam.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.05),
-		NumberSequenceKeypoint.new(1, 0.35),
-	})
-	beam.CurveSize0 = 2.5
-	beam.CurveSize1 = -2.5
-	beam.Segments = 24
-	beam.Width0 = 0.4
-	beam.Width1 = 0.4
-	beam.FaceCamera = true
-	beam.Color = ColorSequence.new(color or Color3.fromRGB(120, 100, 255))
-end
-
-function createEspBeam(rootPart, targetPart, beamKey, color)
-	if not rootPart or not targetPart then
 		return nil
 	end
-	local att0 = Instance.new("Attachment")
-	att0.Name = beamKey .. "_A0"
-	att0.Parent = rootPart
-	local att1 = Instance.new("Attachment")
-	att1.Name = beamKey .. "_A1"
-	att1.Parent = targetPart
-	local beam = Instance.new("Beam")
-	beam.Name = beamKey .. "_Beam"
-	styleEspBeam(beam, color)
-	beam.Attachment0 = att0
-	beam.Attachment1 = att1
-	beam.Parent = targetPart
-	return {beam = beam, att0 = att0, att1 = att1}
-end
 
-function syncEspBeamTable(beamTable, currentKeys)
-	for key, entry in pairs(beamTable) do
-		if not currentKeys[key] then
-			destroyEspBeamEntry(entry)
-			beamTable[key] = nil
+	for _, childName in ipairs({ "Content", "content", "desc", "Desc", "body", "Body", "text", "Text" }) do
+		local label = tryLabel(para:FindFirstChild(childName, true))
+		if label then
+			return label
 		end
 	end
-end
 
-function ensureEspBeam(beamTable, beamKey, showBeam, rootPart, targetPart, color, currentKeys)
-	if not showBeam or not rootPart or not targetPart then
-		return
-	end
-	local entry = beamTable[beamKey]
-	if not entry or not entry.beam or not entry.beam.Parent then
-		destroyEspBeamEntry(entry)
-		beamTable[beamKey] = createEspBeam(rootPart, targetPart, beamKey, color)
-	end
-	if currentKeys then
-		currentKeys[beamKey] = true
-	end
-end
-
-function setHubParagraph(widget, content, title)
-	if syde and syde.setHubParagraph then
-		syde.setHubParagraph(widget, content, title)
-	end
-end
-
-function enableParagraphRichText(widget)
-	if syde and syde.enableParagraphRichText then
-		syde.enableParagraphRichText(widget)
-	end
-end
-
-local function tw(obj, props, t)
-	local info = TweenInfo.new(t or 0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-	local tween = TS:Create(obj, info, props)
-	tween:Play()
-	return tween
-end
-local function rnd(p, r)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, r or 8)
-	c.Parent = p
-end
-local function stk(p, col, th)
-	local s = Instance.new("UIStroke")
-	s.Color = col or Color3.fromRGB(30, 30, 35)
-	s.Thickness = th or 1
-	s.Transparency = 0.35
-	s.Parent = p
-end
-local function pad(p, t, b, l, r)
-	local pd = Instance.new("UIPadding")
-	pd.PaddingTop = UDim.new(0, t or 0)
-	pd.PaddingBottom = UDim.new(0, b or 0)
-	pd.PaddingLeft = UDim.new(0, l or 0)
-	pd.PaddingRight = UDim.new(0, r or 0)
-	pd.Parent = p
-end
-local function getZenithGUI()
-	local coreGui = game:GetService("CoreGui")
-	return coreGui:FindFirstChild("sydeUILoader")
-end
-local seedData = nil
-local valCalc = nil
-local weightFormat = nil
-local plantSizeMultipliers = nil
-local petData = nil
-
-local safeRequire = function(module)
-	if not module then return nil end
-	local success, result = pcall(require, module)
-	if success then
-		return result
-	end
-	local success3, clone = pcall(function() return module:Clone() end)
-	if success3 and clone then
-		clone.Parent = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("Workspace")
-		local success4, result4 = pcall(require, clone)
-		clone:Destroy()
-		if success4 then
-			return result4
-		end
-	end
-	return nil
-end
-
-local findModule = function(name)
-	local rep = game:GetService("ReplicatedStorage")
-	local sharedModules = rep:FindFirstChild("SharedModules")
-	if sharedModules then
-		local found = sharedModules:FindFirstChild(name)
-		if found then return found end
-		for _, v in sharedModules:GetDescendants() do
-			if v:IsA("ModuleScript") and v.Name == name then
-				return v
-			end
-		end
-	end
-	local sharedData = rep:FindFirstChild("SharedData")
-	if sharedData then
-		local found = sharedData:FindFirstChild(name)
-		if found then return found end
-	end
-	return nil
-end
-
-local function getSeedData()
-	if not seedData then
-		local mod = findModule("SeedData")
-		seedData = mod and safeRequire(mod)
-	end
-	return seedData
-end
-
-local function getPlantSizeMultipliers()
-	if not plantSizeMultipliers then
-		local mod = findModule("PlantSizeMultipliers")
-		plantSizeMultipliers = mod and safeRequire(mod)
-	end
-	return plantSizeMultipliers
-end
-
-local function getPetData()
-	if not petData then
-		local mod = findModule("PetData")
-		petData = mod and safeRequire(mod)
-	end
-	if not petData or typeof(petData) ~= "table" or not next(petData) then
-		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-		folder = folder and folder:FindFirstChild("PetModules")
-		if folder then
-			petData = {}
-			for _, child in folder:GetChildren() do
-				if child:IsA("ModuleScript") then
-					local info = safeRequire(child)
-					local displayName = info and info.AssetName
-					if not displayName or displayName == "" then
-						displayName = child.Name:gsub("(%u)", " %1"):gsub("^%s+", "")
-					end
-					petData[displayName] = info or {}
-					petData[child.Name] = info or {}
+	for _, child in ipairs(para:GetDescendants()) do
+		if child:IsA("TextLabel") or child:IsA("TextBox") then
+			local name = child.Name:lower()
+			if name == "content" or name == "desc" or name == "body" or name == "text" or name == "value" then
+				if not isTitleLabel(child) then
+					return child
 				end
 			end
 		end
 	end
-	return petData
-end
 
-local function getWeightFormat()
-	if not weightFormat then
-		local mod = findModule("WeightFormat")
-		weightFormat = mod and safeRequire(mod)
+	for _, child in ipairs(para:GetDescendants()) do
+		if (child:IsA("TextLabel") or child:IsA("TextBox")) and not isTitleLabel(child) then
+			return child
+		end
 	end
-	return weightFormat
+
+	return nil
 end
 
-local function getValCalc()
-	if not valCalc then
-		local mod = findModule("FruitValueCalc")
-		valCalc = mod and safeRequire(mod)
+local function applyParagraphContent(para, paraContent, text)
+	if not paraContent or not paraContent.Parent then
+		paraContent = getParagraphContent(para)
 	end
-	return valCalc
-end
-
-local function resolveGameFruitIcon(name)
-	if not name then return "rbxassetid://13001190533" end
-	local rep = game:GetService("ReplicatedStorage")
-	local sdFolder = rep:FindFirstChild("SharedModules") and rep.SharedModules:FindFirstChild("SeedData")
-	if sdFolder then
-		local fFolder = sdFolder:FindFirstChild("FruitImages")
-		local f = fFolder and fFolder:FindFirstChild(name)
-		if f and f:IsA("StringValue") and f.Value ~= "" then return f.Value end
-		local sFolder = sdFolder:FindFirstChild("SeedImages")
-		local s = sFolder and sFolder:FindFirstChild(name)
-		if s and s:IsA("StringValue") and s.Value ~= "" then return s.Value end
+	if paraContent then
+		paraContent.RichText = true
+		paraContent.Text = text or ""
+		paraContent.Visible = true
 	end
-	return "rbxassetid://13001190533"
-end
-
-local function resolveGamePetIcon(name)
-	if not name then return "rbxassetid://13001190533" end
-	local clean = name:gsub("%s+", ""):lower()
-	local pd = getPetData()
-	if pd and typeof(pd) == "table" then
-		for k, v in pairs(pd) do
-			if typeof(v) == "table" and v.Image then
-				if k:lower() == clean or (v.DisplayName and v.DisplayName:gsub("%s+", ""):lower() == clean) then
-					return v.Image
+	if para then
+		for _, child in ipairs(para:GetDescendants()) do
+			if (child:IsA("TextLabel") or child:IsA("TextBox")) and child ~= paraContent then
+				local name = child.Name:lower()
+				local parent = child.Parent
+				local isTitle = name == "title"
+					or (parent and parent.Name:lower() == "frame" and parent:FindFirstChild("title") == child)
+				if not isTitle then
+					child.Text = ""
+					child.Visible = false
 				end
 			end
 		end
 	end
-	local rep = game:GetService("ReplicatedStorage")
-	local gearImages = rep:FindFirstChild("SharedModules") and rep.SharedModules:FindFirstChild("GearImages")
-	if gearImages then
-		local found = gearImages:FindFirstChild(name)
-		if found and found:IsA("StringValue") and found.Value ~= "" then
-			return found.Value
-		end
-	end
-	return "rbxassetid://13001190533"
+	return paraContent
 end
 
-local fruitIcons = setmetatable({}, {
-	__index = function(_, key)
-		return resolveGameFruitIcon(key)
-	end
-})
+local function deferParagraphUpdate(callback)
+	task.defer(function()
+		pcall(callback)
+	end)
+end
 
-local petColors = {
-	["Common"] = Color3.fromRGB(150, 150, 150),
-	["Uncommon"] = Color3.fromRGB(80, 200, 120),
-	["Rare"] = Color3.fromRGB(80, 150, 240),
-	["Legendary"] = Color3.fromRGB(255, 195, 55),
-	["Mythic"] = Color3.fromRGB(240, 75, 75),
-	["Super"] = Color3.fromRGB(180, 120, 255),
-}
-
-local getFruitAsset = function(name, _, imgLabel)
-	if not imgLabel then return end
-	if name == "SheckleCoin" or name == "Coin" then
-		imgLabel.Image = "rbxassetid://106697118185275"
+local function safeOnPropertyChanged(instance, property, callback)
+	if not instance or typeof(callback) ~= "function" then
 		return
 	end
-	imgLabel.Image = resolveGameFruitIcon(name)
+	-- GetObjects UI is Plugin-security: AbsoluteSize/AbsolutePosition signals throw.
+	if property == "AbsoluteSize" or property == "AbsolutePosition" then
+		property = "Size"
+	end
+	pcall(function()
+		instance:GetPropertyChangedSignal(property):Connect(function()
+			pcall(callback)
+		end)
+	end)
 end
 
-local getOnlineAsset = function(name, _, imgLabel)
-	if not imgLabel then return end
-	imgLabel.Image = resolveGamePetIcon(name)
+local function safeGuiAlive(guiObject)
+	local alive = false
+	pcall(function()
+		alive = typeof(guiObject) == "Instance" and guiObject:IsDescendantOf(game)
+	end)
+	return alive
 end
-do
-	local UI_BRAND = {
-		Name = "Casual Hub",
-		Subtitle = "Grow a Garden 2",
-		Logo = "107758724327938",
-		Discord = "https://discord.gg/zTXP6w6DWJ",
-		ConfigFolder = "CasualHub",
-		ConfigFile = "growagarden2",
-		Accent = Color3.fromRGB(255, 255, 255),
-	}
-	local function disconnectSydeRuntime()
-		if typeof(shared) ~= "table" or typeof(shared.SydeRuntimeConnections) ~= "table" then
+
+local function guiAbsSize(gui)
+	if typeof(gui) ~= "Instance" or not gui:IsA("GuiObject") then
+		return Vector2.zero
+	end
+	local size = gui.Size
+	local parent = gui.Parent
+	local parentSize
+	if parent and parent:IsA("GuiObject") then
+		parentSize = guiAbsSize(parent)
+	else
+		local cam = workspace.CurrentCamera
+		parentSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
+	end
+	return Vector2.new(
+		size.X.Scale * parentSize.X + size.X.Offset,
+		size.Y.Scale * parentSize.Y + size.Y.Offset
+	)
+end
+
+local function guiAbsPos(gui)
+	local x, y = 0, 0
+	local node = gui
+	while typeof(node) == "Instance" and node:IsA("GuiObject") do
+		local parent = node.Parent
+		local parentSize
+		if parent and parent:IsA("GuiObject") then
+			parentSize = guiAbsSize(parent)
+		else
+			local cam = workspace.CurrentCamera
+			parentSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
+		end
+		local pos = node.Position
+		local size = guiAbsSize(node)
+		local anchor = node.AnchorPoint
+		x += pos.X.Scale * parentSize.X + pos.X.Offset - size.X * anchor.X
+		y += pos.Y.Scale * parentSize.Y + pos.Y.Offset - size.Y * anchor.Y
+		node = parent
+	end
+	return Vector2.new(x, y)
+end
+
+local function safeGetChildren(parent)
+	local children = {}
+	if typeof(parent) ~= "Instance" then
+		return children
+	end
+	pcall(function()
+		for _, child in ipairs(parent:GetChildren()) do
+			table.insert(children, child)
+		end
+	end)
+	return children
+end
+
+local inputservice =	game:GetService("InsertService")
+local tweenservice = 	game:GetService("TweenService")
+local https = 			game:GetService("HttpService")
+local runservice =		game:GetService("RunService")
+local userinput =		game:GetService("UserInputService")
+local players =         game:GetService("Players"):GetPlayers()
+local textservice =     game:GetService('TextService')
+local player =          game:GetService('Players')
+local textservice =     game:GetService('TextService')
+local coregui =         (gethui and gethui()) or game:GetService("CoreGui")
+
+local PARAGRAPH_PADDING = 18
+local PARAGRAPH_CONTENT_EXTRA = 10
+
+local function measureLabelTextHeight(label, fallback)
+	fallback = fallback or 16
+	local height = fallback
+	if not label then
+		return height
+	end
+	pcall(function()
+		if label.TextBounds.Y > 0 then
+			height = label.TextBounds.Y
+		elseif label.TextSize then
+			height = label.TextSize + 4
+		end
+	end)
+	return height
+end
+
+local function bindDescLabelResize(descLabel, container, titleYOffset)
+	if not descLabel or not container then
+		return
+	end
+	titleYOffset = titleYOffset or 10
+	local function updateSize()
+		pcall(function()
+			local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+			local titleHeight = 0
+			local title = container:FindFirstChild("title")
+			if title and title:IsA("GuiObject") then
+				titleHeight = title.Size.Y.Offset
+			end
+			local newDescSize = UDim2.new(1, -150, 0, textHeight)
+			local newButtonSize = UDim2.new(container.Size.X.Scale, container.Size.X.Offset, 0, titleHeight + textHeight + titleYOffset)
+			tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+			tweenservice:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize }):Play()
+		end)
+	end
+	pcall(updateSize)
+	pcall(function()
+		descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			task.defer(updateSize)
+		end)
+	end)
+end
+
+local function bindSliderDescResize(descLabel, slider)
+	if not descLabel or not slider then
+		return
+	end
+	local function updateSize()
+		pcall(function()
+			local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+			local newDescSize = UDim2.new(1, -150, 0, textHeight)
+			local slideholder = slider:FindFirstChild("slideholder")
+			local slideholderHeight = 0
+			if slideholder and slideholder:IsA("GuiObject") then
+				slideholderHeight = slideholder.AbsoluteSize.Y
+			end
+			local titleHeight = 0
+			local title = slider:FindFirstChild("title")
+			if title and title:IsA("GuiObject") then
+				titleHeight = title.Size.Y.Offset
+			end
+			local newButtonSize = UDim2.new(slider.Size.X.Scale, slider.Size.X.Offset, 0, slideholderHeight + titleHeight + textHeight + 15)
+			tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+			tweenservice:Create(slider, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize }):Play()
+		end)
+	end
+	pcall(updateSize)
+	pcall(function()
+		descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			task.defer(updateSize)
+		end)
+	end)
+end
+
+local function getParagraphTitleHeight(para)
+	local height = 34
+	pcall(function()
+		local titleFrame = para:FindFirstChild("Frame")
+		local titleLabel = titleFrame and titleFrame:FindFirstChild("title") or para:FindFirstChild("title")
+		if titleLabel and titleLabel:IsA("GuiObject") then
+			local titleHeight = titleLabel.AbsoluteSize.Y
+			if titleHeight > 0 then
+				height = titleHeight
+			elseif titleLabel:IsA("TextLabel") then
+				height = math.max(titleLabel.TextBounds.Y, 20)
+			end
+		end
+		if titleFrame and titleFrame:IsA("GuiObject") then
+			local frameHeight = titleFrame.AbsoluteSize.Y
+			if frameHeight > height then
+				height = frameHeight
+			end
+		end
+	end)
+	return height
+end
+
+local function getParagraphContentHeight(contentLabel)
+	if not contentLabel then
+		return 16
+	end
+	local text = contentLabel.Text or ""
+	local lineCount = math.max(1, select(2, text:gsub("\n", "\n")) + 1)
+	local boundsHeight = 16
+	pcall(function()
+		boundsHeight = math.max(contentLabel.TextBounds.Y, 16)
+	end)
+	local richTextPad = math.ceil(lineCount * 1.5) + PARAGRAPH_CONTENT_EXTRA
+	return boundsHeight + richTextPad
+end
+
+local function applyParagraphSize(para, paraContent, animate)
+	if not para or not paraContent or not paraContent.Parent then
+		return
+	end
+	paraContent.RichText = true
+	paraContent.TextWrapped = true
+	paraContent.TextTruncate = Enum.TextTruncate.None
+	paraContent.ClipsDescendants = false
+	para.ClipsDescendants = false
+	local contentHeight = getParagraphContentHeight(paraContent)
+	local newDescSize = UDim2.new(1, -20, 0, contentHeight)
+	local newButtonSize = UDim2.new(para.Size.X.Scale, para.Size.X.Offset, 0, getParagraphTitleHeight(para) + contentHeight + PARAGRAPH_PADDING)
+	if animate then
+		local descTween = tweenservice:Create(paraContent, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
+		descTween:Play()
+		local buttonTween = tweenservice:Create(para, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
+		buttonTween:Play()
+	else
+		paraContent.Size = newDescSize
+		para.Size = newButtonSize
+	end
+end
+
+local function scheduleParagraphResize(para, paraContent, animate)
+	applyParagraphSize(para, paraContent, animate)
+	local page = para and para.Parent
+	task.defer(function()
+		applyParagraphSize(para, paraContent, false)
+		if page then
+			pcall(function()
+				syde:updateLayout(page, 7)
+			end)
+		end
+		task.delay(0.1, function()
+			applyParagraphSize(para, paraContent, false)
+			if page then
+				pcall(function()
+					syde:updateLayout(page, 7)
+				end)
+			end
+		end)
+		task.delay(0.35, function()
+			applyParagraphSize(para, paraContent, false)
+			if page then
+				pcall(function()
+					syde:updateLayout(page, 7)
+				end)
+			end
+		end)
+	end)
+end
+
+-- update check
+local update = false
+if update then
+	local updategui = game:GetObjects("rbxassetid://122225389943465")[1]
+	updategui.Parent = coregui
+
+	local cord = '/GzumVvz3QM'
+
+	task.wait(0.5)
+	updategui.Enabled = true
+
+	updategui.main.BackgroundTransparency = 1
+	updategui.main.Size = UDim2.new(0, 150,0, 150)
+	updategui.main.time.TextTransparency = 1
+	updategui.main.info.TextTransparency = 1
+	updategui.main.text.TextLabel.TextTransparency = 1
+	updategui.main.text.more.TextTransparency = 1
+
+	tweenservice:Create(updategui.main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+	tweenservice:Create(updategui.main, TweenInfo.new(0.75, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 350,0, 230)}):Play()
+
+	task.wait(0.07)
+
+	tweenservice:Create(updategui.main.time, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+	tweenservice:Create(updategui.main.info, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+	task.wait(0.07)
+	tweenservice:Create(updategui.main.text.TextLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+	task.wait(0.07)
+	tweenservice:Create(updategui.main.text.more, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+	local duration = 25
+	local startTime = tick()
+
+	local connection
+	connection = runservice.Heartbeat:Connect(function()
+		local elapsed = tick() - startTime
+		local remaining = math.max(duration - elapsed, 0)
+
+		updategui.main.time.Text = "Destroying in " .. string.format("%.1f", remaining) .. " secs"
+
+		if remaining <= 0 then
+			connection:Disconnect()
+
+			tweenservice:Create(updategui.main.text.TextLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			task.wait(0.07)
+			tweenservice:Create(updategui.main.text.more, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			task.wait(0.2)
+			tweenservice:Create(updategui.main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			tweenservice:Create(updategui.main, TweenInfo.new(0.75, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 150,0, 130)}):Play()
+			updategui.main.s2.Visible = false
+
+
+
+			task.wait(0.07)
+
+			tweenservice:Create(updategui.main.time, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			tweenservice:Create(updategui.main.info, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+
+			task.wait(0.75)
+			updategui:Destroy()
+		end
+	end)
+
+	updategui.main.s2.interact.MouseButton1Click:Connect(function()
+
+		tweenservice:Create(updategui.main.s2.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Color3.fromRGB(74, 255, 33)}):Play()
+		tweenservice:Create(updategui.main.s2.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0}):Play()
+		task.wait(0.5)
+		tweenservice:Create(updategui.main.s2.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Color3.fromRGB(87, 101, 242)}):Play()
+		tweenservice:Create(updategui.main.s2.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0.5}):Play()
+		setclipboard(cord)
+	end)
+end
+
+if update then return end
+
+local Library =         game:GetObjects("rbxassetid://123800669522471")[1]
+local Loader =          game:GetObjects("rbxassetid://110221114597158")[1]
+
+local resizing =        false
+local screenSize =      workspace.CurrentCamera.ViewportSize
+local isMobile =        userinput.TouchEnabled or (screenSize.X < 1024 and screenSize.Y < 768)
+local dragOffset =        255
+local dragOffsetMobile =  150
+local camera =          workspace.CurrentCamera
+
+Library.Enabled = false
+Loader.Enabled = false
+
+local ui = Library
+local window = ui and ui:FindFirstChild("main")
+local top = window and window:FindFirstChild("top")
+local tabs = window and window:FindFirstChild("tabs") and window.tabs:FindFirstChild("tab")
+local pages = window and window:FindFirstChild("pages")
+
+local function bindUiRefs()
+	if not Library or not Library:FindFirstChild("main") then
+		local ok, fresh = pcall(function()
+			return game:GetObjects("rbxassetid://123800669522471")[1]
+		end)
+		if ok and fresh then
+			Library = fresh
+			Library.Enabled = false
+		end
+	end
+
+	if not Library then
+		return false
+	end
+
+	ui = Library
+	window = ui:FindFirstChild("main")
+	if not window then
+		return false
+	end
+
+	top = window:FindFirstChild("top")
+	local tabsRoot = window:FindFirstChild("tabs")
+	tabs = tabsRoot and tabsRoot:FindFirstChild("tab")
+	pages = window:FindFirstChild("pages")
+	return pages ~= nil
+end
+
+local loaded = false
+
+local RUNTIME_CONN_KEY = "SydeRuntimeConnections"
+
+local function getRuntimeConnections()
+	if typeof(shared) ~= "table" then
+		return {}
+	end
+	if not shared[RUNTIME_CONN_KEY] then
+		shared[RUNTIME_CONN_KEY] = {}
+	end
+	return shared[RUNTIME_CONN_KEY]
+end
+
+local function trackRuntimeConnection(conn)
+	if typeof(conn) ~= "RBXScriptConnection" then
+		return
+	end
+	table.insert(getRuntimeConnections(), conn)
+end
+
+local function disconnectRuntimeConnections()
+	local list = getRuntimeConnections()
+	for i = #list, 1, -1 do
+		local conn = list[i]
+		if conn and conn.Connected then
+			pcall(function()
+				conn:Disconnect()
+			end)
+		end
+		list[i] = nil
+	end
+end
+
+local BLUR_DOF_NAME = "SydeBlurDOF"
+local BIND_ROOT_NAME = "neon"
+
+local function cleanupBlurArtifacts()
+	for _, child in ipairs(camera:GetChildren()) do
+		if child:IsA("Folder") and child.Name == BIND_ROOT_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+
+	local lighting = game:GetService("Lighting")
+	for _, child in ipairs(lighting:GetChildren()) do
+		if child:IsA("DepthOfFieldEffect") and child.Name == BLUR_DOF_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+end
+
+local function cleanupSydeUi(markerName)
+	disconnectRuntimeConnections()
+	cleanupBlurArtifacts()
+	local function destroyLoaderGuis(parent)
+		if not parent then
 			return
 		end
-		for i = #shared.SydeRuntimeConnections, 1, -1 do
-			local conn = shared.SydeRuntimeConnections[i]
-			if conn and conn.Connected then
-				pcall(function() conn:Disconnect() end)
-			end
-			shared.SydeRuntimeConnections[i] = nil
-		end
-	end
-	local function loadSydeLibrary()
-		disconnectSydeRuntime()
-		local source
-		if typeof(readfile) == "function" and typeof(isfile) == "function" then
-			for _, path in ipairs({
-				"liba.lua",
-				"Syde.lua",
-				"lib.lua",
-				"луашечки/liba.lua",
-			}) do
-				if isfile(path) then
-					local ok, contents = pcall(readfile, path)
-					if ok and typeof(contents) == "string" and #contents > 1000 then
-						source = contents
-						break
-					end
-				end
-			end
-		end
-		if not source then
-			warn("[" .. UI_BRAND.Name .. "] liba.lua not found locally, downloading remote UI library")
-			source = game:HttpGet("https://raw.githubusercontent.com/KaspikScriptsRb/redacted/refs/heads/main/.lua")
-		end
-		if typeof(source) ~= "string" or #source < 1000 then
-			error("[" .. UI_BRAND.Name .. "] Failed to download Syde UI")
-		end
-		local compile = loadstring or load
-		local factory, compileErr = compile(source)
-		if not factory then
-			error("[" .. UI_BRAND.Name .. "] Syde compile failed: " .. tostring(compileErr))
-		end
-		local ok, result = pcall(factory)
-		if not ok then
-			error("[" .. UI_BRAND.Name .. "] Syde init failed: " .. tostring(result))
-		end
-		return result
-	end
-	syde = loadSydeLibrary()
-	local savedToggleKey = hubStore and hubStore.ToggleKey
-	hubStore = {}
-	if savedToggleKey then
-		hubStore.ToggleKey = savedToggleKey
-	end
-	webhookHooks = {}
-	hub, hubStore = syde:CreateHub({
-		brand = UI_BRAND,
-		hubStore = hubStore,
-		getGuiRoot = getZenithGUI,
-	})
-end
-do
-sellValueData = nil
-displayCropMap = {}
-local worldsModule = nil
-local WORLD_PLACE_IDS = {
-	Main = 97598239454123,
-	FallHarvest = 126987765280963,
-}
-local optionWidgetRegistry = {}
-
-local function getWorldsModule()
-	if worldsModule then
-		return worldsModule
-	end
-	local mod = findModule and findModule("Worlds")
-	worldsModule = mod and safeRequire and safeRequire(mod)
-	return worldsModule
-end
-
-function getCurrentWorldId()
-	local Worlds = getWorldsModule()
-	if Worlds and Worlds.CurrentId then
-		return Worlds.CurrentId
-	end
-	local placeId = game.PlaceId
-	for worldId, mappedPlaceId in pairs(WORLD_PLACE_IDS) do
-		if mappedPlaceId == placeId then
-			return worldId
-		end
-	end
-	return "Main"
-end
-
-function getWorldPlaceId(worldId)
-	local Worlds = getWorldsModule()
-	if Worlds and Worlds.GetPlaceId then
-		local ok, placeId = pcall(Worlds.GetPlaceId, Worlds, worldId)
-		if ok and placeId then
-			return placeId
-		end
-	end
-	return WORLD_PLACE_IDS[worldId]
-end
-
-function getWorldDisplayName(worldId)
-	worldId = worldId or getCurrentWorldId()
-	local Worlds = getWorldsModule()
-	if Worlds and Worlds.Worlds and Worlds.Worlds[worldId] then
-		return Worlds.Worlds[worldId].DisplayName or worldId
-	end
-	if worldId == "Main" then
-		return "Garden Valley"
-	end
-	if worldId == "FallHarvest" then
-		return "Fall Harvest"
-	end
-	return worldId
-end
-
-local shopItemWorldsCache = {}
-function getShopItemWorlds(shopName, itemName)
-	if typeof(itemName) ~= "string" or itemName == "" then
-		return {}
-	end
-	local cacheKey = tostring(shopName) .. "\0" .. itemName
-	if shopItemWorldsCache[cacheKey] ~= nil then
-		return shopItemWorldsCache[cacheKey]
-	end
-	local sharedModules = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-	local moduleName = shopName == "SeedShop" and "SeedData" or (shopName == "GearShop" and "GearShopData" or "CrateData")
-	local nameKey = shopName == "SeedShop" and "SeedName" or (shopName == "GearShop" and "GearName" or "CrateName")
-	local mod = sharedModules and sharedModules:FindFirstChild(moduleName)
-	if not mod then
-		shopItemWorldsCache[cacheKey] = {}
-		return {}
-	end
-	local ok, dataModule = pcall(require, mod)
-	if not ok or typeof(dataModule) ~= "table" then
-		shopItemWorldsCache[cacheKey] = {}
-		return {}
-	end
-	for _, entry in dataModule do
-		if type(entry) == "table" and entry[nameKey] == itemName then
-			local worlds = entry.Worlds
-			if typeof(worlds) == "table" then
-				shopItemWorldsCache[cacheKey] = worlds
-				return worlds
-			end
-			break
-		end
-	end
-	shopItemWorldsCache[cacheKey] = {}
-	return {}
-end
-
-function isShopItemInCurrentWorld(shopName, itemName)
-	local worlds = getShopItemWorlds(shopName, itemName)
-	if not worlds or #worlds == 0 then
-		return true
-	end
-	local currentWorld = getCurrentWorldId()
-	for _, worldId in worlds do
-		if worldId == currentWorld then
-			return true
-		end
-	end
-	return false
-end
-
-function filterPredictStockByWorld(stockMap, shopName)
-	if typeof(stockMap) ~= "table" then
-		return stockMap
-	end
-	local filtered = {}
-	for itemName, quantity in stockMap do
-		if isShopItemInCurrentWorld(shopName, itemName) then
-			filtered[itemName] = quantity
-		end
-	end
-	return filtered
-end
-
-function getWalletStatName(worldId)
-	worldId = worldId or getCurrentWorldId()
-	local Worlds = getWorldsModule()
-	if Worlds and Worlds.WalletStatName then
-		local ok, statName = pcall(Worlds.WalletStatName, Worlds, worldId)
-		if ok and typeof(statName) == "string" and statName ~= "" then
-			return statName
-		end
-	end
-	local WorldsTable = Worlds and Worlds.Worlds
-	local cfg = WorldsTable and WorldsTable[worldId]
-	if cfg and typeof(cfg.CurrencyName) == "string" and cfg.CurrencyName ~= "" then
-		return cfg.CurrencyName
-	end
-	return "Sheckles"
-end
-
-function getCurrencyName()
-	local Worlds = getWorldsModule()
-	local worldId = getCurrentWorldId()
-	local cfg = Worlds and Worlds.Worlds and Worlds.Worlds[worldId]
-	if cfg and typeof(cfg.CurrencyName) == "string" and cfg.CurrencyName ~= "" then
-		return cfg.CurrencyName
-	end
-	return "Sheckles"
-end
-
-function getCurrencySuffix()
-	local Worlds = getWorldsModule()
-	local worldId = getCurrentWorldId()
-	local cfg = Worlds and Worlds.Worlds and Worlds.Worlds[worldId]
-	if cfg and typeof(cfg.CurrencySuffix) == "string" and cfg.CurrencySuffix ~= "" then
-		return cfg.CurrencySuffix
-	end
-	return "¢"
-end
-
-function getPlayerCurrency()
-	local statName = getWalletStatName()
-	local leaderstats = localPlayer:FindFirstChild("leaderstats")
-	local stat = leaderstats and leaderstats:FindFirstChild(statName)
-	if stat then
-		return stat.Value
-	end
-	local _, gcPlayerdata = getGCPricesAndBalance and getGCPricesAndBalance()
-	if gcPlayerdata and gcPlayerdata.Data then
-		local data = gcPlayerdata.Data
-		return data[statName] or data.Sheckles or data.Leaves or 0
-	end
-	return 0
-end
-
-function formatCurrencyAmount(amount, compact)
-	amount = tonumber(amount) or 0
-	local suffix = getCurrencySuffix()
-	if compact then
-		local n = amount
-		if n >= 1000000000 then
-			return suffix .. string.format("%.2fB", n / 1000000000)
-		elseif n >= 1000000 then
-			return suffix .. string.format("%.2fM", n / 1000000)
-		elseif n >= 1000 then
-			return suffix .. string.format("%.2fK", n / 1000)
-		end
-		return suffix .. tostring(math.floor(n))
-	end
-	return suffix .. tostring(math.floor(amount))
-end
-
-function teleportToWorld(worldId)
-	if not worldId or worldId == "" then
-		return
-	end
-	if getCurrentWorldId() == worldId then
-		if hub then
-			hub:Notify("You're already in " .. getWorldDisplayName(worldId) .. "!")
-		end
-		return
-	end
-	local net = getGameNetworking()
-	if net and net.Worlds and net.Worlds.RequestTravel then
-		pcall(function()
-			net.Worlds.RequestTravel:Fire(worldId)
-		end)
-		if hub then
-			hub:Notify("Teleporting to " .. getWorldDisplayName(worldId) .. "...")
-		end
-		return
-	end
-	local placeId = getWorldPlaceId(worldId)
-	if placeId then
-		pcall(function()
-			game:GetService("TeleportService"):Teleport(placeId, localPlayer)
-		end)
-	end
-end
-
-function registerGameListWidget(widget, listKey)
-	if widget and listKey then
-		table.insert(optionWidgetRegistry, {widget = widget, key = listKey})
-	end
-end
-
-function refreshAllGameListWidgets()
-	for _, entry in optionWidgetRegistry do
-		local list = gameLists[entry.key]
-		if list and entry.widget and entry.widget.SetOptions then
-			pcall(function()
-				entry.widget:SetOptions(list)
-			end)
-		end
-	end
-end
-
-gameLists = {
-	crops = {},
-	seeds = {},
-	plants = {},
-	gears = {},
-	crates = {},
-	mutations = {"None"},
-	pets = {},
-	petSizes = {"Normal", "Big", "Huge"},
-	petTypes = {"Normal", "Rainbow"},
-	petMutations = {"None", "Normal", "Big", "Huge", "Rainbow"},
-	rarities = {"Common", "Uncommon", "Rare", "Legendary", "Mythic", "Super"},
-	eventSeeds = {},
-	eggs = {},
-}
-local fruitStock = {}
-local function ensureSellValueData()
-	if sellValueData then return sellValueData end
-	if findModule then
-		local mod = findModule("SellValueData")
-		if mod and safeRequire then
-			sellValueData = safeRequire(mod)
-		end
-	end
-	return sellValueData
-end
-function refreshGameLists()
-	local function clearAndFill(target, names)
-		table.clear(target)
-		for _, name in names do
-			table.insert(target, name)
-		end
-	end
-	local function addUnique(targetSet, name)
-		if typeof(name) == "string" and name ~= "" then
-			targetSet[name] = true
-		end
-	end
-	local sellData = ensureSellValueData()
-	local cropSet, plantSet = {}, {}
-	if sellData then
-		for name, _ in pairs(sellData) do
-			if typeof(name) == "string" then
-				addUnique(cropSet, name)
-				addUnique(plantSet, name)
-			end
-		end
-	end
-	local sv = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-	local function loadShop(shopName)
-		local names = {}
-		if sv then
-			local shop = sv:FindFirstChild(shopName)
-			local items = shop and shop:FindFirstChild("Items")
-			if items then
-				for _, item in items:GetChildren() do
-					table.insert(names, item.Name)
-				end
-				table.sort(names)
-			end
-		end
-		return names
-	end
-	local seeds = loadShop("SeedShop")
-	local gears = loadShop("GearShop")
-	local crates = loadShop("CrateShop")
-	for _, seedName in seeds do
-		addUnique(cropSet, seedName)
-		addUnique(plantSet, seedName)
-	end
-	local crops, plants = {}, {}
-	for name in cropSet do
-		table.insert(crops, name)
-	end
-	for name in plantSet do
-		table.insert(plants, name)
-	end
-	table.sort(crops)
-	table.sort(plants)
-	clearAndFill(gameLists.crops, crops)
-	clearAndFill(gameLists.plants, plants)
-	table.clear(displayCropMap)
-	local locTable = game:FindFirstChild("LocalizationTable")
-	if locTable then
-		pcall(function()
-			for _, e in locTable:GetEntries() do
-				local ru = e.Values and (e.Values["ru"] or e.Values["ru-ru"] or e.Values["ru-RU"])
-				if ru and ru ~= "" and e.Source and e.Source ~= "" then
-					local cleanSrc = e.Source:gsub("%[.-%]", ""):gsub("⚖️.*", ""):match("^%s*(.-)%s*$")
-					local cleanRu = ru:gsub("%[.-%]", ""):gsub("⚖️.*", ""):match("^%s*(.-)%s*$")
-					if cleanRu and cleanRu ~= "" and cleanSrc and cleanSrc ~= "" then
-						displayCropMap[cleanRu] = cleanSrc
-						displayCropMap[cleanRu:lower()] = cleanSrc
-					end
-				end
-			end
-		end)
-	end
-	local locMod = findModule and findModule("SeedLocalize")
-	local locData = locMod and safeRequire and safeRequire(locMod)
-	for _, cropName in crops do
-		displayCropMap[cropName] = cropName
-		displayCropMap[cropName:lower()] = cropName
-		if locData and locData.LocalizeSeedName then
-			local ok, displayName = pcall(locData.LocalizeSeedName, cropName)
-			if ok and typeof(displayName) == "string" and displayName ~= "" then
-				displayCropMap[displayName] = cropName
-				displayCropMap[displayName:lower()] = cropName
-			end
-		end
-	end
-	clearAndFill(gameLists.seeds, seeds)
-	clearAndFill(gameLists.gears, gears)
-	clearAndFill(gameLists.crates, crates)
-	local mutations = {"None"}
-	if findModule then
-		local md = findModule("MutationData")
-		if md then
-			for _, child in md:GetChildren() do
-				if child:IsA("ModuleScript") then
-					table.insert(mutations, child.Name)
-				end
-			end
-			table.sort(mutations, function(a, b)
-				if a == "None" then return true end
-				if b == "None" then return false end
-				return a < b
-			end)
-		end
-	end
-	clearAndFill(gameLists.mutations, mutations)
-
-	local pData = getPetData()
-	local petNames = {}
-	local petModulesFolder = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-	petModulesFolder = petModulesFolder and petModulesFolder:FindFirstChild("PetModules")
-	if petModulesFolder then
-		for _, child in petModulesFolder:GetChildren() do
-			if child:IsA("ModuleScript") then
-				local info = safeRequire(child)
-				local displayName = info and info.AssetName
-				if not displayName or displayName == "" then
-					displayName = child.Name:gsub("(%u)", " %1"):gsub("^%s+", "")
-				end
-				table.insert(petNames, displayName)
-			end
-		end
-	elseif pData and typeof(pData) == "table" then
-		for name, val in pairs(pData) do
-			if typeof(name) == "string" and not name:find("^Get") and typeof(val) == "table" then
-				table.insert(petNames, name)
-			end
-		end
-	end
-	table.sort(petNames)
-	if #petNames > 0 then
-		clearAndFill(gameLists.pets, petNames)
-	end
-
-	local petSizesMod = findModule and findModule("PetSizes")
-	local petSizesData = petSizesMod and safeRequire and safeRequire(petSizesMod)
-	local petSizesList = {"Normal", "Big", "Huge"}
-	if petSizesData and typeof(petSizesData.Scales) == "table" then
-		for sz, _ in pairs(petSizesData.Scales) do
-			if not table.find(petSizesList, sz) then
-				table.insert(petSizesList, sz)
-			end
-		end
-	end
-	clearAndFill(gameLists.petSizes, petSizesList)
-
-	local petTypesMod = findModule and findModule("PetTypes")
-	local petTypesData = petTypesMod and safeRequire and safeRequire(petTypesMod)
-	local petTypesList = {"Normal", "Rainbow"}
-	if petTypesData and typeof(petTypesData.Registry) == "table" then
-		for typ, _ in pairs(petTypesData.Registry) do
-			if not table.find(petTypesList, typ) then
-				table.insert(petTypesList, typ)
-			end
-		end
-	end
-	clearAndFill(gameLists.petTypes, petTypesList)
-
-	local petMutList = {"None", "Normal"}
-	for _, sz in petSizesList do
-		if not table.find(petMutList, sz) then
-			table.insert(petMutList, sz)
-		end
-	end
-	for _, typ in petTypesList do
-		if not table.find(petMutList, typ) then
-			table.insert(petMutList, typ)
-		end
-	end
-	clearAndFill(gameLists.petMutations, petMutList)
-
-	local raritySet = {}
-	for _, rarity in {"Common", "Uncommon", "Rare", "Legendary", "Mythic", "Super"} do
-		raritySet[rarity] = true
-	end
-	for _, petName in petNames do
-		local info = getPetInfo(petName)
-		if info and typeof(info.Rarity) == "string" and info.Rarity ~= "" then
-			raritySet[info.Rarity] = true
-		end
-	end
-	local rarities = {}
-	for rarity in raritySet do
-		table.insert(rarities, rarity)
-	end
-	table.sort(rarities)
-	clearAndFill(gameLists.rarities, rarities)
-
-	local eventSeedSet = {}
-	for _, seedName in seeds do
-		local normalized = seedName
-		if seedName == "Gold" or seedName == "Rainbow" or seedName == "Mega" then
-			normalized = seedName .. " Seed"
-		end
-		if seedName:find("Gold") or seedName:find("Rainbow") or seedName:find("Mega") then
-			eventSeedSet[normalized] = true
-			eventSeedSet[seedName] = true
-		end
-	end
-	if sv then
-		local seedItems = sv:FindFirstChild("SeedShop") and sv.SeedShop:FindFirstChild("Items")
-		if seedItems then
-			for _, item in seedItems:GetChildren() do
-				if item:GetAttribute("GoldSeed") or item:GetAttribute("RainbowSeed") or item:GetAttribute("MegaSeed") or item:GetAttribute("EventSeed") then
-					local label = item.Name
-					if item.Name == "Gold" then label = "Gold Seed"
-					elseif item.Name == "Rainbow" then label = "Rainbow Seed"
-					elseif item.Name == "Mega" then label = "Mega Seed"
-					end
-					eventSeedSet[label] = true
-					eventSeedSet[item.Name] = true
-				end
-			end
-		end
-	end
-	if not next(eventSeedSet) then
-		eventSeedSet["Gold Seed"] = true
-		eventSeedSet["Rainbow Seed"] = true
-		eventSeedSet["Mega Seed"] = true
-	end
-	local eventSeeds = {}
-	for name in eventSeedSet do
-		table.insert(eventSeeds, name)
-	end
-	table.sort(eventSeeds)
-	clearAndFill(gameLists.eventSeeds, eventSeeds)
-
-	local eggSet = {}
-	if sv then
-		for _, shop in sv:GetChildren() do
-			local items = shop:FindFirstChild("Items")
-			if items then
-				for _, item in items:GetChildren() do
-					if item.Name:lower():find("egg") then
-						eggSet[item.Name] = true
-					end
-				end
-			end
-		end
-	end
-	if not next(eggSet) then
-		for _, eggName in {"Common Egg", "Test Egg", "Big Egg", "Mega Egg", "Rainbow Egg"} do
-			eggSet[eggName] = true
-		end
-	end
-	local eggs = {}
-	for name in eggSet do
-		table.insert(eggs, name)
-	end
-	table.sort(eggs)
-	clearAndFill(gameLists.eggs, eggs)
-
-	refreshAllGameListWidgets()
-end
-local function getStockMultiplierFromUI(cropName)
-	if fruitStock[cropName] then
-		local mult = fruitStock[cropName].multiplier
-		if mult then return mult end
-	end
-	local success, val = pcall(function()
-		local fruitStockPrice = localPlayer.PlayerGui:FindFirstChild("FruitStockPrice")
-		local scrollingFrame = fruitStockPrice and fruitStockPrice:FindFirstChild("Frame") and fruitStockPrice.Frame:FindFirstChild("ScrollingFrame")
-		if scrollingFrame then
-			for _, card in scrollingFrame:GetChildren() do
-				if card.Name == "FruitCard" and card:GetAttribute("SeedToolTip") == cropName then
-					local frame = card:FindFirstChild("Frame")
-					local multiplierLabel = frame and frame:FindFirstChild("Multiplier")
-					if multiplierLabel then
-						local txt = multiplierLabel.Text
-						local num = tonumber(txt:match("X([%d%.]+)"))
-						if num then return num end
-					end
-				end
-			end
-		end
-	end)
-	if success and val then return val end
-	return 1
-end
-local function getFriendCount()
-	local count = 0
-	pcall(function()
-		for _, p in game:GetService("Players"):GetPlayers() do
-			if p ~= localPlayer then
-				local isFriend = false
+		for _, gui in parent:GetChildren() do
+			if gui:IsA("ScreenGui") and (gui.Name == "sydeUILoader" or gui:FindFirstChild(markerName)) then
 				pcall(function()
-					isFriend = localPlayer:IsFriendsWith(p.UserId)
+					gui:Destroy()
 				end)
-				if isFriend then
-					count = count + 1
-				end
 			end
+		end
+	end
+	destroyLoaderGuis(coregui)
+	pcall(function()
+		destroyLoaderGuis(game:GetService("CoreGui"))
+	end)
+	pcall(function()
+		if gethui then
+			destroyLoaderGuis(gethui())
 		end
 	end)
-	return count
-end
-getPetInfo = function(name)
-	if not name then return nil end
-	local pd = getPetData()
-	if not pd or typeof(pd) ~= "table" then return nil end
-	local info = pd[name]
-	if info then return info end
-	local clean = name:gsub("%s+", ""):lower()
-	for k, v in pairs(pd) do
-		if typeof(v) == "table" then
-			if k:gsub("%s+", ""):lower() == clean or (v.DisplayName and v.DisplayName:gsub("%s+", ""):lower() == clean) then
-				return v
-			end
-		end
-	end
-	return nil
-end
-function getPlayerFarm()
-	local gardens = workspace:FindFirstChild("Gardens")
-	if not gardens then return nil end
-	for _, plot in gardens:GetChildren() do
-		if isPlotOwnedByLocalPlayer(plot) then
-			return plot
-		end
-	end
-	return nil
 end
 
-function getPlotOwnerUserId(plot)
-	if not plot then
-		return nil
-	end
-	local ownerId = plot:GetAttribute("OwnerUserId")
-	if typeof(ownerId) == "number" and ownerId > 0 then
-		return ownerId
-	end
-	local ownerName = plot:GetAttribute("Owner")
-	if typeof(ownerName) ~= "string" or ownerName == "" then
-		return nil
-	end
-	local lowerOwner = string.lower(ownerName)
-	for _, player in Players:GetPlayers() do
-		if string.lower(player.Name) == lowerOwner or string.lower(player.DisplayName) == lowerOwner then
-			return player.UserId
-		end
-	end
-	return nil
-end
+local syde = {
 
-function isPlotOwnedByLocalPlayer(plot)
-	if not plot then
-		return false
-	end
-	local ownerId = getPlotOwnerUserId(plot)
-	if ownerId then
-		return ownerId == localPlayer.UserId
-	end
-	local ownerName = plot:GetAttribute("Owner")
-	if typeof(ownerName) ~= "string" or ownerName == "" then
-		return false
-	end
-	local lowerOwner = string.lower(ownerName)
-	return lowerOwner == string.lower(localPlayer.Name) or lowerOwner == string.lower(localPlayer.DisplayName)
-end
+	theme = {
+		['Accent'] = Color3.fromRGB(255, 151, 227);
+		['HitBox'] = Color3.fromRGB(255, 151, 227);
+		['DropShadow']   = ColorSequence.new(Color3.fromRGB(0, 0, 0));
 
-function getPlotOwnerPlayer(plot)
-	local ownerId = getPlotOwnerUserId(plot)
-	if not ownerId then
-		return nil
-	end
-	return Players:GetPlayerByUserId(ownerId)
-end
-
-function isPlayerInsidePlot(player, plot)
-	if not player or not plot then
-		return false
-	end
-	local char = player.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return false
-	end
-	local ref = plot:FindFirstChild("PlotSizeReference")
-	if ref and ref:IsA("BasePart") then
-		local pos = ref.CFrame:PointToObjectSpace(hrp.Position)
-		local half = ref.Size / 2
-		if math.abs(pos.X) <= half.X and math.abs(pos.Z) <= half.Z and math.abs(pos.Y) <= half.Y + 16 then
-			return true
-		end
-	end
-	local sp = plot:FindFirstChild("SpawnPoint")
-	if sp and sp:IsA("BasePart") and (hrp.Position - sp.Position).Magnitude < 120 then
-		return true
-	end
-	return false
-end
-
-function isPlotOwnerInGarden(plot, plantOwnerUserId)
-	local ownerPlayer = getPlotOwnerPlayer(plot)
-	if ownerPlayer and ownerPlayer ~= localPlayer and isPlayerInsidePlot(ownerPlayer, plot) then
-		return true
-	end
-	if typeof(plantOwnerUserId) == "number" and plantOwnerUserId > 0 and plantOwnerUserId ~= localPlayer.UserId then
-		local plantOwner = Players:GetPlayerByUserId(plantOwnerUserId)
-		if plantOwner and plantOwner ~= ownerPlayer and isPlayerInsidePlot(plantOwner, plot) then
-			return true
-		end
-	end
-	return false
-end
-
-local sprinklerRangesCache = nil
-local sprinklerNameListCache = nil
-local gardenSyncControllerCache = nil
-
-local function loadSprinklerData()
-	if sprinklerRangesCache then
-		return sprinklerRangesCache, sprinklerNameListCache
-	end
-	local ranges = {}
-	local names = {}
-	local mod = findModule("SprinklerData")
-	local data = mod and safeRequire(mod)
-	if data then
-		for _, entry in ipairs(data) do
-			local sprinklerName = entry.SprinklerName
-			if sprinklerName and entry.Radius then
-				ranges[sprinklerName] = entry.Radius
-				table.insert(names, sprinklerName)
-			end
-		end
-		table.sort(names)
-	end
-	if not next(ranges) then
-		ranges = {
-			["Common Sprinkler"] = 20,
-			["Uncommon Sprinkler"] = 25,
-			["Rare Sprinkler"] = 30,
-			["Legendary Sprinkler"] = 40,
-			["Super Sprinkler"] = 55,
-			["Syrup Sprinkler"] = 20,
-			["Super Syrup Sprinkler"] = 55,
-		}
-		names = {
-			"Common Sprinkler", "Uncommon Sprinkler", "Rare Sprinkler",
-			"Legendary Sprinkler", "Super Sprinkler", "Syrup Sprinkler", "Super Syrup Sprinkler",
-		}
-	end
-	sprinklerRangesCache = ranges
-	sprinklerNameListCache = names
-	return ranges, names
-end
-
-function getSprinklerRadius(sprinklerName)
-	local ranges = loadSprinklerData()
-	return ranges[sprinklerName] or 20
-end
-
-function getSprinklerNameList()
-	local _, names = loadSprinklerData()
-	return names
-end
-
-local function horizontalDistance(a, b)
-	local dx = a.X - b.X
-	local dz = a.Z - b.Z
-	return math.sqrt(dx * dx + dz * dz)
-end
-
-local function getSprinklerPart(model)
-	return model:FindFirstChild("RootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-end
-
-function forEachPlacedSprinkler(farm, callback)
-	if not farm or not callback then
-		return
-	end
-	local ranges = loadSprinklerData()
-	local seen = {}
-	local sprinklersFolder = farm:FindFirstChild("Sprinklers")
-	if sprinklersFolder then
-		for _, sprinkler in sprinklersFolder:GetChildren() do
-			if sprinkler:IsA("Model") then
-				seen[sprinkler] = true
-				local part = getSprinklerPart(sprinkler)
-				if part then
-					callback(sprinkler.Name, part.Position, getSprinklerRadius(sprinkler.Name))
-				end
-			end
-		end
-	end
-	for _, child in farm:GetDescendants() do
-		if child:IsA("Model") and not seen[child] and ranges[child.Name] then
-			local part = getSprinklerPart(child)
-			if part then
-				callback(child.Name, part.Position, ranges[child.Name])
-			end
-		end
-	end
-end
-
-function isPositionCoveredBySprinkler(farm, position, extraRadius)
-	if not farm or not position then
-		return false
-	end
-	extraRadius = extraRadius or 0
-	local covered = false
-	forEachPlacedSprinkler(farm, function(_, sprinklerPos, radius)
-		if horizontalDistance(sprinklerPos, position) <= radius + extraRadius then
-			covered = true
-		end
-	end)
-	return covered
-end
-
-function isTooCloseToSprinklerStack(farm, position)
-	if not farm or not position then
-		return false
-	end
-	local tooClose = false
-	forEachPlacedSprinkler(farm, function(_, sprinklerPos)
-		if horizontalDistance(sprinklerPos, position) < 1 then
-			tooClose = true
-		end
-	end)
-	return tooClose
-end
-
-function raycastPlantAreaPosition(worldPos, farm)
-	if not worldPos or not farm then
-		return worldPos
-	end
-	local collectionService = game:GetService("CollectionService")
-	local include = {}
-	for _, part in farm:GetDescendants() do
-		if part:IsA("BasePart") and collectionService:HasTag(part, "PlantArea") then
-			table.insert(include, part)
-		end
-	end
-	if #include == 0 then
-		return worldPos
-	end
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = include
-	local result = workspace:Raycast(worldPos + Vector3.new(0, 80, 0), Vector3.new(0, -200, 0), params)
-	return result and result.Position or worldPos
-end
-
-function getPlantAreaColumns()
-	local farm = getPlayerFarm()
-	if not farm then
-		return {}
-	end
-	local cols = {}
-	local visual = farm:FindFirstChild("Visual")
-	if visual then
-		for _, child in visual:GetChildren() do
-			if child:IsA("BasePart") and (child.Name == "PlantAreaColumn1" or child.Name == "PlantAreaColumn2" or child.Name:find("PlantAreaColumn")) then
-				table.insert(cols, child)
-			end
-		end
-	end
-	if #cols == 0 then
-		for _, child in farm:GetDescendants() do
-			if child:IsA("BasePart") and child.Name:find("PlantAreaColumn") then
-				table.insert(cols, child)
-			end
-		end
-	end
-	return cols
-end
-
-function isPointInPart(worldPos, part)
-	local localPos = part.CFrame:PointToObjectSpace(worldPos)
-	local halfSize = part.Size / 2
-	return math.abs(localPos.X) <= (halfSize.X + 3)
-		and math.abs(localPos.Z) <= (halfSize.Z + 3)
-end
-
-function isPositionInPlantArea(pos, columns)
-	columns = columns or getPlantAreaColumns()
-	if #columns == 0 then
-		return true
-	end
-	for _, col in columns do
-		if isPointInPart(pos, col) then
-			return true
-		end
-	end
-	return false
-end
-
-function isPlantNear(pos, range)
-	local farm = getPlayerFarm()
-	local plants = farm and farm:FindFirstChild("Plants")
-	if plants then
-		for _, plant in plants:GetChildren() do
-			local pPart = plant:FindFirstChild("PrimaryPart") or plant:FindFirstChildWhichIsA("BasePart")
-			if pPart and (pPart.Position - pos).Magnitude < (range or 1.2) then
-				return true
-			end
-		end
-	end
-	return false
-end
-
-function getGroundUnderPlayer()
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
-		return nil
-	end
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = {character}
-	local result = workspace:Raycast(rootPart.Position, Vector3.new(0, -15, 0), raycastParams)
-	if result then
-		return result.Position
-	end
-	return rootPart.Position - Vector3.new(0, 3.2, 0)
-end
-
-function projectToSoil(worldPos)
-	local farm = getPlayerFarm()
-	if not farm then
-		return worldPos, false, nil
-	end
-	local parts = {}
-	local visual = farm:FindFirstChild("Visual")
-	if visual then
-		for _, child in visual:GetChildren() do
-			if child:IsA("BasePart") and (child.Name == "Can_Plant" or child.Name:find("PlantAreaColumn")) then
-				table.insert(parts, child)
-			end
-		end
-	end
-	if #parts == 0 then
-		local imp = farm:FindFirstChild("Important", true)
-		local locs = imp and imp:FindFirstChild("Plant_Locations")
-		if locs then
-			for _, part in locs:GetChildren() do
-				if part:IsA("BasePart") and part.Name == "Can_Plant" then
-					table.insert(parts, part)
-				end
-			end
-		end
-	end
-	if #parts == 0 then
-		return worldPos, false, nil
-	end
-	local closestPart = nil
-	local closestDist = math.huge
-	for _, part in parts do
-		local dist = (Vector3.new(part.Position.X, 0, part.Position.Z) - Vector3.new(worldPos.X, 0, worldPos.Z)).Magnitude
-		if dist < closestDist then
-			closestDist = dist
-			closestPart = part
-		end
-	end
-	if closestPart then
-		local localPos = closestPart.CFrame:PointToObjectSpace(worldPos)
-		local halfSize = closestPart.Size / 2
-		if math.abs(localPos.X) <= halfSize.X and math.abs(localPos.Z) <= halfSize.Z then
-			local topY = (closestPart.CFrame * CFrame.new(0, halfSize.Y, 0)).Position.Y
-			local raycastParams = RaycastParams.new()
-			raycastParams.FilterType = Enum.RaycastFilterType.Include
-			raycastParams.FilterDescendantsInstances = {closestPart}
-			local startRay = Vector3.new(worldPos.X, topY + 5, worldPos.Z)
-			local result = workspace:Raycast(startRay, Vector3.new(0, -10, 0), raycastParams)
-			if result then
-				return result.Position, true, closestPart
-			end
-			return Vector3.new(worldPos.X, topY, worldPos.Z), true, closestPart
-		end
-	end
-	return worldPos, false, nil
-end
-
-function getRandomPointInColumn(col)
-	local cf = col.CFrame
-	local size = col.Size
-	local rx = (math.random() - 0.5) * size.X
-	local rz = (math.random() - 0.5) * size.Z
-	return cf:PointToWorldSpace(Vector3.new(rx, 0.13, rz))
-end
-
-function getRandomPointInZone(zoneMin, zoneMax)
-	if not zoneMin or not zoneMax then
-		return nil
-	end
-	for _ = 1, 12 do
-		local x = zoneMin.X + math.random() * (zoneMax.X - zoneMin.X)
-		local z = zoneMin.Z + math.random() * (zoneMax.Z - zoneMin.Z)
-		local y = (zoneMin.Y + zoneMax.Y) * 0.5
-		local projected, isValid = projectToSoil(Vector3.new(x, y, z))
-		if isValid then
-			return projected
-		end
-	end
-	return nil
-end
-
-function GetRandomPlantingPosition(playerFarmFolder)
-	if not playerFarmFolder then
-		return nil
-	end
-	local plantLocationsFolder = playerFarmFolder:FindFirstChild("Important", true)
-	if plantLocationsFolder then
-		plantLocationsFolder = plantLocationsFolder:FindFirstChild("Plant_Locations")
-	end
-	if not plantLocationsFolder then
-		return nil
-	end
-	local canPlantParts = {}
-	for _, part in plantLocationsFolder:GetChildren() do
-		if part:IsA("BasePart") and part.Name == "Can_Plant" then
-			table.insert(canPlantParts, part)
-		end
-	end
-	if #canPlantParts == 0 then
-		return nil
-	end
-	for _ = 1, 40 do
-		local randomPart = canPlantParts[math.random(1, #canPlantParts)]
-		local randomXOffset = (math.random() - 0.5) * (randomPart.Size.X - 1.0)
-		local randomZOffset = (math.random() - 0.5) * (randomPart.Size.Z - 1.0)
-		local positionInPartSpace = Vector3.new(randomXOffset, randomPart.Size.Y / 2, randomZOffset)
-		local worldSpacePlantPosition = randomPart.CFrame * positionInPartSpace
-		local projectedPos, isValid = projectToSoil(worldSpacePlantPosition)
-		if isValid and not isPlantNear(projectedPos, 1.3) then
-			return projectedPos
-		end
-	end
-	return nil
-end
-
-local function getGardenSyncController()
-	if gardenSyncControllerCache == nil then
-		local ok, controller = pcall(function()
-			return require(localPlayer.PlayerScripts.Controllers.GardenSyncController)
-		end)
-		gardenSyncControllerCache = ok and controller or false
-	end
-	return gardenSyncControllerCache or nil
-end
-
-local function hasActiveGrowthBoost(userId, plantId, fruitId)
-	local ok, growthData = pcall(function()
-		local fruitVisualizer = require(localPlayer.PlayerScripts.Controllers.FruitVisualizerController)
-		return fruitVisualizer:GetFruitGrowthData(userId, plantId, fruitId)
-	end)
-	if ok and growthData and (growthData.BoostExpiresClock or 0) > os.clock() then
-		return true
-	end
-	return false
-end
-
-local function plantHasFruitsWithoutBoost(userId, plantId, syncData)
-	if not syncData or not syncData.Fruits then
-		return true
-	end
-	for fruitId, fruitData in pairs(syncData.Fruits) do
-		local age = fruitData.Age or 0
-		local maxAge = fruitData.MaxAge or 0
-		if age < maxAge and not hasActiveGrowthBoost(userId, plantId, fruitId) then
-			return true
-		end
-	end
-	return false
-end
-
-local function plantAllFruitsFullyGrown(syncData)
-	if not syncData or not syncData.Fruits then
-		return false
-	end
-	local hasFruit = false
-	for _, fruitData in pairs(syncData.Fruits) do
-		hasFruit = true
-		local age = fruitData.Age or 0
-		local maxAge = fruitData.MaxAge or 0
-		if age < maxAge then
-			return false
-		end
-	end
-	return hasFruit
-end
-
-function shouldAutoWaterPlant(plant)
-	if not plant then
-		return false
-	end
-	if not autowaterskipmature and not autowaterskipboost and not autowaterskipallfruitsgrown then
-		return true
-	end
-	local plantId = plant:GetAttribute("PlantId")
-	local gardenSync = getGardenSyncController()
-	local syncData = plantId and gardenSync and gardenSync:GetPlant(localPlayer.UserId, plantId)
-	if syncData and syncData.Fruits then
-		if autowaterskipallfruitsgrown and plantAllFruitsFullyGrown(syncData) then
-			return false
-		end
-		if autowaterskipboost and not plantHasFruitsWithoutBoost(localPlayer.UserId, plantId, syncData) then
-			return false
-		end
-		return true
-	end
-	if autowaterskipmature then
-		local age = syncData and (syncData.Age or syncData.CurrentAge) or plant:GetAttribute("Age")
-		local maxAge = syncData and syncData.MaxAge or plant:GetAttribute("MaxAge")
-		if age and maxAge and age >= maxAge then
-			return false
-		end
-	end
-	return true
-end
-
-local function multiselectCsvToSet(csv)
-	local set = {}
-	if not csv or csv == "" or csv == "None" then
-		return set, true
-	end
-	for entry in (csv .. ","):gmatch("([^,]+),") do
-		local trimmed = entry:match("^%s*(.-)%s*$")
-		if trimmed ~= "" and trimmed ~= "None" then
-			set[trimmed] = true
-		end
-	end
-	if not next(set) then
-		return set, true
-	end
-	return set, false
-end
-
-local function csvMatchesFilter(csv, value, filterType)
-	local set, all = multiselectCsvToSet(csv)
-	if all or not next(set) then
-		return true
-	end
-	local matched = set[value] == true
-	if filterType == "Blacklist" then
-		return not matched
-	end
-	return matched
-end
-
-local EVENT_SEED_PRIORITY = {
-	["Gold Seed"] = 1, ["Gold"] = 1,
-	["Rainbow Seed"] = 2, ["Rainbow"] = 2,
-	["Mega Seed"] = 3, ["Mega"] = 3,
+	};
+	Connections = {};
+	Comms = Instance.new('BindableEvent');
+	ParentOverride = nil;
+	Build = 'Sv0';
+	plugins = {};
+	ConfigEnabled = false;
+	ConfigFolder = 'Syde';
+	ConfigFile = 'Config';
+	Flags = {};
+	SettingsFlags = {};
+	LoadedConfig = nil;
 }
 
-function getClaimableSeedTypeList()
-	local list = {}
-	for _, name in gameLists.eventSeeds do
-		table.insert(list, name)
-	end
-	return list
-end
+-- @Utilities
 
-local function getEventSeedLabel(part)
-	if not part then
-		return nil
-	end
-	if part:GetAttribute("RainbowSeed") == true then
-		return "Rainbow Seed"
-	end
-	if part:GetAttribute("GoldSeed") == true then
-		return "Gold Seed"
-	end
-	if part:GetAttribute("MegaSeed") == true then
-		return "Mega Seed"
-	end
-	local packName = part:GetAttribute("SeedPack")
-	if packName == "Rainbow" then
-		return "Rainbow Seed"
-	end
-	if packName == "Gold" then
-		return "Gold Seed"
-	end
-	if packName == "Mega" then
-		return "Mega Seed"
-	end
-	if part.Name == "Gold" or part:GetAttribute("SeedTool") == "Gold" then
-		return "Gold Seed"
-	end
-	if part.Name == "Rainbow" or part:GetAttribute("SeedTool") == "Rainbow" then
-		return "Rainbow Seed"
-	end
-	if part.Name == "Mega" or part:GetAttribute("SeedTool") == "Mega" then
-		return "Mega Seed"
-	end
-	return nil
-end
-
-local function resolveEventSeedLabel(inst)
-	if not inst then
-		return nil
-	end
-	local label = getEventSeedLabel(inst)
-	if label then
-		return label
-	end
-	local current = inst.Parent
-	while current and current ~= workspace do
-		label = getEventSeedLabel(current)
-		if label then
-			return label
-		end
-		current = current.Parent
-	end
-	for _, desc in inst:GetDescendants() do
-		label = getEventSeedLabel(desc)
-		if label then
-			return label
-		end
-	end
-	return nil
-end
-
-local function labelFromPrompt(prompt)
-	if not prompt then
-		return nil
-	end
-	local text = string.lower(tostring(prompt.ObjectText or "") .. " " .. tostring(prompt.ActionText or ""))
-	if text:find("rainbow", 1, true) then
-		return "Rainbow Seed"
-	end
-	if text:find("mega", 1, true) then
-		return "Mega Seed"
-	end
-	if text:find("gold", 1, true) then
-		return "Gold Seed"
-	end
-	return nil
-end
-
-function classifyWorldDrop(obj)
-	if not obj then
-		return "Other", "Unknown"
-	end
-	local model = obj:IsA("Model") and obj or obj:FindFirstAncestorOfClass("Model")
-	if model and model.Parent and model.Parent.Name == "DroppedItems" then
-		local categoryMap = {
-			HarvestedFruits = "Fruits",
-			SeedTool = "Seeds",
-			Seeds = "Seeds",
-			Sprinkler = "Gears",
-			WateringCan = "Gears",
-			Mushroom = "Gears",
-			Gnome = "Cosmetics",
-			Raccoon = "Cosmetics",
-			Crate = "Crates",
-			Teleporter = "Gears",
-			PlayerMagnet = "Gears",
-			FruitMagnet = "Gears",
-			PetTeleporter = "Gears",
-			SeedPack = "Seed Packs",
-			Wheelbarrow = "Gears",
-			Trowel = "Gears",
-			Crowbar = "Gears",
-			Ladder = "Gears",
-			FreezeRay = "Gears",
-			PowerHose = "Gears",
-			Rake = "Gears",
-			Sign = "Gears",
-			EmptyPot = "Gears",
-			Flashbang = "Gears",
-			Bird = "Gears",
-			Pets = "Pets",
-			Raccoons = "Pets",
-		}
-		local category = model:GetAttribute("ItemCategory")
-		local displayName = model:GetAttribute("DisplayName")
-		local dropType = categoryMap[category] or category or "Other"
-		local dropName = displayName or model:GetAttribute("ItemName") or model.Name
-		if typeof(dropName) == "string" then
-			local cleaned = dropName:match("^(.-)%s*%[")
-			if cleaned then
-				dropName = cleaned:match("^%s*(.-)%s*$") or cleaned
-			end
-		end
-		return dropType, dropName
-	end
-	local function fromInst(inst)
-		if not inst then return end
-		if inst:GetAttribute("HarvestedFruit") or inst:GetAttribute("FruitName") then
-			return "Fruits", inst:GetAttribute("FruitName") or inst:GetAttribute("Fruit") or inst.Name
-		end
-		if inst:GetAttribute("SeedTool") or inst:GetAttribute("MainCategory") == "Seed" then
-			return "Seeds", inst:GetAttribute("SeedTool") or inst.Name
-		end
-		if inst:GetAttribute("MainCategory") == "Gear" or inst:GetAttribute("WateringCan") or inst:GetAttribute("Shovel") or inst:GetAttribute("Build") then
-			return "Gears", inst.Name
-		end
-		if inst:GetAttribute("MainCategory") == "Cosmetic" or inst:GetAttribute("Cosmetic") or inst:GetAttribute("CosmeticName") then
-			return "Cosmetics", inst.Name
-		end
-		if inst:GetAttribute("MainCategory") == "Crate" or inst:GetAttribute("Crate") then
-			return "Crates", inst.Name
-		end
-		if inst:GetAttribute("PackName") or inst.Name:find("Pack", 1, true) then
-			return "Seed Packs", inst:GetAttribute("PackName") or inst.Name
-		end
-	end
-	local dropType, dropName = fromInst(obj)
-	if dropType then
-		return dropType, dropName
-	end
-	if obj.Parent and obj.Parent ~= workspace and obj.Parent.Name ~= "DroppedItems" then
-		dropType, dropName = fromInst(obj.Parent)
-		if dropType then
-			return dropType, dropName
-		end
-	end
-	local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-	return "Other", (prompt and prompt.ObjectText ~= "" and prompt.ObjectText) or obj.Name
-end
-
-function getDropPickupTarget(model)
-	if not model or not model:IsA("Model") then
-		return nil, nil
-	end
-	local anchor = model:FindFirstChild("PromptAnchor", true)
-	if anchor and anchor:IsA("BasePart") then
-		local prompt = anchor:FindFirstChild("PickupPrompt")
-		if prompt and prompt:IsA("ProximityPrompt") then
-			return prompt, anchor
-		end
-	end
-	local prompt = model:FindFirstChild("PickupPrompt", true)
-	if prompt and prompt:IsA("ProximityPrompt") then
-		return prompt, model.PrimaryPart or anchor or model:FindFirstChildWhichIsA("BasePart")
-	end
-	return nil, nil
-end
-
-function getModelPosition(model)
-	if not model then return nil end
-	if model:IsA("BasePart") then return model.Position end
-	if model.PrimaryPart then return model.PrimaryPart.Position end
-	local part = model:FindFirstChild("HarvestPart")
-	if not part then
-		for _, desc in model:GetDescendants() do
-			if desc:IsA("BasePart") then
-				part = desc
-				break
-			end
-		end
-	end
-	return part and part.Position
-end
-
-function isSingleHarvestSeed(seedName)
-	if not seedName then
-		return false
-	end
-	local cropName = getcropname(seedName) or seedName
-	local data = getSeedData()
-	if not data then
-		return false
-	end
-	for _, entry in data do
-		if type(entry) == "table" and entry.SeedName == cropName and entry.IsSingleHarvest == true then
-			return true
-		end
-	end
-	return false
-end
-
-local fruitVisualizerController
-
-local function getFruitVisualizerController()
-	if not fruitVisualizerController then
-		pcall(function()
-			fruitVisualizerController = require(game.Players.LocalPlayer.PlayerScripts.Controllers.FruitVisualizerController)
-		end)
-	end
-	return fruitVisualizerController
-end
-
-function getSingleHarvestWeightKg(obj)
-	local fvc = getFruitVisualizerController()
-	if not fvc or not fvc.CalculatePlantWeight then
-		return 0
-	end
-	local ok, weight = pcall(fvc.CalculatePlantWeight, fvc, obj)
-	return ok and weight or 0
-end
-
-local plantHeightExcludedFolders = {
-	Fruits = true,
-	FruitSpawnLocations = true,
-}
-
-function getPlantHeightFt(plant)
-	if not plant then
-		return nil
-	end
-	local heightAttr = plant:GetAttribute("Height")
-	if heightAttr then
-		return heightAttr
-	end
-	local minY = math.huge
-	local maxY = -math.huge
-	for _, part in plant:QueryDescendants("BasePart") do
-		local parent = part.Parent
-		local skip = false
-		while parent and parent ~= plant do
-			if plantHeightExcludedFolders[parent.Name] then
-				skip = true
-				break
-			end
-			parent = parent.Parent
-		end
-		if not skip then
-			local topY = (part.CFrame * CFrame.new(0, part.Size.Y / 2, 0)).Position.Y
-			local bottomY = (part.CFrame * CFrame.new(0, -part.Size.Y / 2, 0)).Position.Y
-			if topY > maxY then
-				maxY = topY
-			end
-			if bottomY < minY then
-				minY = bottomY
-			end
-		end
-	end
-	if maxY == -math.huge then
-		return nil
-	end
-	return math.round(maxY - minY)
-end
-
-function formatPlantHeightText(heightFt)
-	if not heightFt or heightFt <= 0 then
-		return nil
-	end
-	return "Height: " .. string.format("%.1f", heightFt):gsub("%.0$", "") .. "ft"
-end
-
-function isSingleHarvestGardenObject(obj, plant)
-	if not obj then
-		return false
-	end
-	plant = plant or ((obj.Parent and obj.Parent.Name == "Fruits") and obj.Parent.Parent) or obj
-	if plant:FindFirstChild("Fruits") then
-		return false
-	end
-	local seedName = plant:GetAttribute("SeedName") or getseedname(plant)
-	return isSingleHarvestSeed(seedName)
-end
-
-function estimateFruitPrice(seedName, sizeMulti, mutation, decay)
-	local price = calcGamePrice(seedName, sizeMulti, mutation, decay)
-	if price > 0 then return price end
-	local base = getbaseprice(seedName)
-	if base <= 0 then return 0 end
-	local decayFactor = 1 - math.clamp(tonumber(decay) or 0, 0, 1)
-	return math.floor(base * (sizeMulti or 1) * getMutationMultiplier(mutation) * decayFactor)
-end
-
-function getGardenObjectCalcInputs(obj, plant)
-	if not obj then
-		return nil
-	end
-	plant = plant or ((obj.Parent and obj.Parent.Name == "Fruits") and obj.Parent.Parent) or obj
-	local seedName = getseedname(obj)
-	if (not seedName or seedName == "") and plant then
-		seedName = plant:GetAttribute("SeedName") or plant:GetAttribute("CorePartName") or plant:GetAttribute("Fruit")
-	end
-	if not seedName or seedName == "" then
-		return nil
-	end
-	local cropName = getcropname(seedName) or seedName
-	local mutation = obj:GetAttribute("Mutation") or "None"
-	local decay = tonumber(obj:GetAttribute("DecayAlpha")) or 0
-	local sizeMulti = obj:GetAttribute("SizeMultiplier") or obj:GetAttribute("SizeMulti")
-	if isSingleHarvestGardenObject(obj, plant) then
-		if not sizeMulti then
-			local weight = getSingleHarvestWeightKg(obj)
-			if weight > 0 then
-				local mod = game:GetService("ReplicatedStorage").PlantGenerationModules.Plants:FindFirstChild(cropName)
-				if mod then
-					local ok, data = pcall(require, mod)
-					local base = ok and data and data.GrowData and data.GrowData.BaseWeight
-					if base and base > 0 then
-						sizeMulti = weight / base
-					end
-				end
-			end
-		end
-	end
-	if not sizeMulti then
-		local attrWeight = obj:GetAttribute("Weight")
-		local baseWeight = getbaseweight(cropName) or getbaseweight(seedName) or 1
-		if attrWeight then
-			sizeMulti = attrWeight > 100 and (attrWeight / 1000 / baseWeight) or (attrWeight / baseWeight)
-		end
-	end
-	if not sizeMulti then
-		local isFruit = (obj.Parent and obj.Parent.Name == "Fruits")
-		local lastGen
-		if isFruit then
-			lastGen = obj:GetAttribute("LastGenerated") or obj:GetAttribute("PlantedAt")
+function syde:DeepMerge(target, source)
+	for k, v in pairs(source) do
+		if type(v) == "table" and type(target[k]) == "table" then
+			self:DeepMerge(target[k], v) 
 		else
-			lastGen = obj:GetAttribute("PlantedAt") or obj:GetAttribute("LastGenerated")
-		end
-		local psm = getPlantSizeMultipliers()
-		if lastGen and psm and typeof(psm) == "table" then
-			local ok, res
-			if isFruit and typeof(psm.GetRandomFruitSize) == "function" then
-				ok, res = pcall(function() return psm.GetRandomFruitSize(1, lastGen) end)
-			elseif typeof(psm.GetRandomPlantSize) == "function" then
-				local stage = obj:GetAttribute("Age") or obj:GetAttribute("MaxAge") or 1
-				ok, res = pcall(function() return psm.GetRandomPlantSize(stage, lastGen, cropName) end)
-			end
-			if ok and res then
-				sizeMulti = res
-			end
+			target[k] = v
 		end
 	end
-	if not sizeMulti or sizeMulti <= 0 then
-		sizeMulti = 1
-	end
-	return cropName, seedName, sizeMulti, mutation, decay
 end
 
-function estimateGardenObjectPrice(obj, plant)
-	local cropName, seedName, sizeMulti, mutation, decay = getGardenObjectCalcInputs(obj, plant)
-	if not cropName then
-		return 0
-	end
-	local price = calcGamePrice(cropName, sizeMulti, mutation, decay)
-	if price > 0 then
-		return price
-	end
-	return estimateFruitPrice(seedName or cropName, sizeMulti, mutation, decay)
-end
-
-function scanGardenFruitStats(plot, onlyRipe)
-	local bestPrice, bestWeight = nil, nil
-	local bestPriceVal, bestWeightVal = 0, 0
-	if not plot then
-		return bestPrice, bestWeight
-	end
-	local plants = plot:FindFirstChild("Plants")
-	if not plants then
-		return bestPrice, bestWeight
-	end
-	for _, plant in plants:GetChildren() do
-		local seedName = plant:GetAttribute("SeedName") or getseedname(plant) or ""
-		local function consider(obj)
-			if onlyRipe then
-				local age = obj:GetAttribute("Age")
-				local maxAge = obj:GetAttribute("MaxAge")
-				if typeof(age) == "number" and typeof(maxAge) == "number" and age < maxAge then
-					return
-				end
-			end
-			local _, displayName, sizeMulti, mutation, decay = getGardenObjectCalcInputs(obj, plant)
-			if not displayName then
-				return
-			end
-			local price = estimateGardenObjectPrice(obj, plant)
-			local weight = getweightkg(obj, displayName)
-			if price > bestPriceVal then
-				bestPriceVal = price
-				bestPrice = {seedName = displayName, mutation = mutation, price = price, weight = weight}
-			end
-			if weight > bestWeightVal then
-				bestWeightVal = weight
-				bestWeight = {seedName = displayName, mutation = mutation, price = price, weight = weight}
-			end
-		end
-		local fruitsFolder = plant:FindFirstChild("Fruits")
-		if fruitsFolder then
-			for _, fruit in fruitsFolder:GetChildren() do
-				consider(fruit)
-			end
-		else
-			consider(plant)
-		end
-	end
-	return bestPrice, bestWeight
-end
-
-function enumerateMyGardenFruits(onlyRipe)
-	local results = {}
-	local farm = getPlayerFarm()
-	if not farm then
-		return results
-	end
-	local plants = farm:FindFirstChild("Plants")
-	if not plants then
-		return results
-	end
-	for _, plant in plants:GetChildren() do
-		local seedName = plant:GetAttribute("SeedName") or getseedname(plant) or ""
-		local plantId = plant:GetAttribute("PlantId") or plant.Name
-		local function addFruit(obj, fruitId)
-			if onlyRipe then
-				local age = obj:GetAttribute("Age")
-				local maxAge = obj:GetAttribute("MaxAge")
-				if typeof(age) == "number" and typeof(maxAge) == "number" and age < maxAge then
-					return
-				end
-			end
-			local cropName, rawSeedName, _, mutation = getGardenObjectCalcInputs(obj, plant)
-			if not cropName then
-				return
-			end
-			local price = estimateGardenObjectPrice(obj, plant)
-			local weight = getweightkg(obj, cropName)
-			local key = tostring(plantId) .. ":" .. tostring(fruitId or obj.Name)
-			table.insert(results, {
-				key = key,
-				seedName = cropName,
-				rawSeedName = rawSeedName,
-				mutation = mutation or "None",
-				weight = weight,
-				price = price,
-			})
-		end
-		local fruitsFolder = plant:FindFirstChild("Fruits")
-		if fruitsFolder then
-			for _, fruit in fruitsFolder:GetChildren() do
-				local fruitId = fruit:GetAttribute("FruitId") or fruit.Name
-				addFruit(fruit, fruitId)
-			end
-		else
-			addFruit(plant, plantId)
-		end
-	end
-	return results
-end
-
-function scanServerFruitStats(onlyRipe)
-	local gardens = workspace:FindFirstChild("Gardens")
-	if not gardens then
-		return nil, nil
-	end
-	local bestPrice, bestWeight = nil, nil
-	for _, plot in gardens:GetChildren() do
-		local plotBestPrice, plotBestWeight = scanGardenFruitStats(plot, onlyRipe)
-		if plotBestPrice and (not bestPrice or plotBestPrice.price > bestPrice.price) then
-			bestPrice = plotBestPrice
-		end
-		if plotBestWeight and (not bestWeight or plotBestWeight.weight > bestWeight.weight) then
-			bestWeight = plotBestWeight
-		end
-	end
-	return bestPrice, bestWeight
-end
-
-function formatSessionTime(seconds)
-	seconds = math.floor(tonumber(seconds) or 0)
-	local h = math.floor(seconds / 3600)
-	local m = math.floor((seconds % 3600) / 60)
-	local s = seconds % 60
-	if h > 0 then
-		return string.format("%dh %02dm %02ds", h, m, s)
-	end
-	return string.format("%dm %02ds", m, s)
-end
-
-function getTimeOfDayInfo()
-	local nightVal = game:GetService("ReplicatedStorage"):FindFirstChild("Night")
-	local isNight = nightVal and nightVal.Value == true
-	local clock = game:GetService("Lighting").ClockTime
-	if isNight or clock >= 21 or clock < 6 then
-		return "Night", "rgb(150,130,255)"
-	elseif clock >= 6 and clock < 12 then
-		return "Morning", "rgb(255,220,100)"
-	elseif clock >= 17 and clock < 21 then
-		return "Evening", "rgb(255,150,90)"
-	end
-	return "Day", "rgb(120,200,255)"
-end
-
-local running = false
-local harvestDelay = 0
-local minweight = 0
-local maxweight = 0
-local cropBaseWeights = {}
-function getbaseweight(seedName)
-	if not seedName then return nil end
-	local cleanName = seedName:gsub("%s+", ""):gsub("Seed$", "")
-	local weight = cropBaseWeights[cleanName]
-		or cropBaseWeights[cleanName .. "Seed"]
-		or cropBaseWeights[seedName]
-	if not weight and seedData then
-		local crop = getcropname(seedName)
-		for _, entry in seedData do
-			if type(entry) == "table" and (entry.SeedName == crop or entry.SeedName == seedName) then
-				weight = entry.BaseWeight
-				if not weight and entry.GrowData then
-					weight = entry.GrowData.BaseWeight or entry.GrowData.Weight or entry.GrowData.weight
-				end
-				if weight then break end
-			end
-		end
-	end
-	return weight or 1
-end
-function getcropname(seedName)
-	if not seedName then return nil end
-	local clean = seedName:gsub("Produce$", ""):gsub("Seed$", ""):gsub("Crop$", "")
-	local sellData = ensureSellValueData()
-	if sellData then
-		if sellData[clean] ~= nil then return clean end
-		local cleanLower = clean:lower():gsub("%s+", "")
-		for name, _ in pairs(sellData) do
-			if typeof(name) == "string" and name:lower():gsub("%s+", "") == cleanLower then
-				return name
-			end
-		end
-	end
-	return clean
-end
-function getbaseprice(seedName)
-	local cropName = getcropname(seedName)
-	local sellData = ensureSellValueData()
-	if sellData and cropName then
-		return sellData[cropName] or 0
-	end
-	return 0
-end
-function getfriendmultiplier()
-	local friendsCount = 0
-	local success, players = pcall(function() return game:GetService("Players"):GetPlayers() end)
-	if success then
-		for _, p in players do
-			if p ~= localPlayer then
-				local ok, isFriends = pcall(function() return localPlayer:IsFriendsWith(p.UserId) end)
-				if ok and isFriends then
-					friendsCount = friendsCount + 1
-				end
-			end
-		end
-	end
-	return 1 + (0.10 * friendsCount)
-end
-function getMutationMultiplier(mutation)
-	if not mutation or mutation == "None" or mutation == "" then return 1 end
-	local sm = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-	local md = sm and sm:FindFirstChild("MutationData")
-	if md then
-		local ok, MutationData = pcall(require, md)
-		if ok and MutationData and MutationData.ReturnPriceMultiplier then
-			local mult = MutationData.ReturnPriceMultiplier(mutation)
-			if typeof(mult) == "number" then
-				return mult
-			end
-		end
-	end
-	return 1
-end
-function calcGamePrice(cropName, sizeMulti, mutation, decay)
-	cropName = getcropname(cropName) or cropName
-	if not cropName then return 0 end
-	local vc = getValCalc()
-	if vc and typeof(vc) == "function" then
-		local ok, res = pcall(vc, cropName, sizeMulti or 1, mutation ~= "None" and mutation or nil, localPlayer, decay or 0)
-		if ok and res and res > 0 then
-			local stockMult = getStockMultiplierFromUI(cropName)
-			return math.floor(res * stockMult)
-		end
-	end
-	return 0
-end
-function _localCalculatePrice(seedName, sizeMulti, mutation)
-	return calcGamePrice(seedName, sizeMulti, mutation, 0)
-end
-function getseedname(obj)
-	if not obj then return nil end
-	local name = obj:GetAttribute("CorePartName")
-		or obj:GetAttribute("SeedName")
-		or obj:GetAttribute("Fruit")
-	if not name and obj.Parent and obj.Parent.Name == "Fruits" and obj.Parent.Parent then
-		name = obj.Parent.Parent:GetAttribute("CorePartName")
-			or obj.Parent.Parent:GetAttribute("SeedName")
-			or obj.Parent.Parent:GetAttribute("Fruit")
-	end
-	if not name then
-		name = obj.Name
-	end
-	if name then
-		name = name:gsub("%s*%b[]%s*$", "")
-		if name:match("^%d+_%w+") or name:match("^%d+_%-") then
-			name = nil
-		end
-	end
-	return name
-end
-local ftype = "Blacklist"
-local flist = "None"
-local lastPredictions = {}
-local function allowed(seedName)
-	local set = {}
-	for name in (flist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if ftype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-local muttype = "Whitelist"
-local mutlist = "None"
-local function mutallowed(mutation)
-	if not mutation or mutation == "" then
-		mutation = "None"
-	end
-	local set = {}
-	for name in (mutlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if mutlist == "" or mutlist == "None" then
-		return true
-	end
-	if muttype == "Whitelist" then
-		return set[mutation] == true
-	end
-	return set[mutation] == nil
-end
-local purchasedCurrentCycle = {}
-local gcPricesCache = {}
-local gcPlayerDataCache = nil
-
-local function getGCPricesAndBalance()
-	local prices = {}
-	local playerdata = nil
-	pcall(function()
-		for _, v in pairs(getgc()) do
-			if type(v) == "function" then
-				local s = debug.info(v, "s")
-				if s and s:match("RestockStoreController") then
-					local numUpvals = debug.info(v, "u")
-					local tempPrices, tempPlayerData
-					for idx = 1, numUpvals do
-						local name, val = debug.getupvalue(v, idx)
-						if val and type(val) == "table" then
-							if val.Data and (val.Data.Sheckles ~= nil or val.Data.Leaves ~= nil) then
-								tempPlayerData = val
-							elseif val.CommonWateringCan or val.Carrot or val.FenceCrate or val["Common Watering Can"] or val["Fence Crate"] then
-								tempPrices = val
-							end
-						end
-					end
-					if tempPrices then table.insert(prices, tempPrices) end
-					if tempPlayerData then playerdata = tempPlayerData end
-				end
-			end
-		end
-	end)
-	if #prices > 0 then gcPricesCache = prices end
-	if playerdata then gcPlayerDataCache = playerdata end
-	return gcPricesCache, gcPlayerDataCache
-end
-
-function getItemPrice(itemName, categoryId)
-	if not itemName then return 0 end
-	if typeof(categoryId) == "string" then
-		if categoryId:find("Seed") then
-			categoryId = 1
-		elseif categoryId:find("Gear") then
-			categoryId = 2
-		elseif categoryId:find("Crate") then
-			categoryId = 3
-		end
-	end
-	local gcPrices, _ = getGCPricesAndBalance()
-	if gcPrices then
-		for _, shopPrices in gcPrices do
-			local itemData = shopPrices[itemName] or shopPrices[itemName:gsub("%s+", "")]
-			if itemData and itemData.price then
-				return itemData.price
-			end
-		end
-	end
-
-	local priceOverride = nil
-	pcall(function()
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
-		if categoryId == 1 then
-			local flags = require(ReplicatedStorage.SharedModules.Flags.SeedShopFlags)
-			priceOverride = flags.PriceOverrides:Get()[itemName]
-		elseif categoryId == 2 then
-			local flags = require(ReplicatedStorage.SharedModules.Flags.GearShopFlags)
-			priceOverride = flags.PriceOverrides:Get()[itemName]
-		elseif categoryId == 3 then
-			local flags = require(ReplicatedStorage.SharedModules.Flags.CrateShopFlags)
-			priceOverride = flags.PriceOverrides:Get()[itemName]
-		end
-	end)
-	if priceOverride then return priceOverride end
-
-	local shopNames = { [1] = "SeedShop", [2] = "GearShop", [3] = "CrateShop" }
-	local sv = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-	local shop = sv and sv:FindFirstChild(shopNames[categoryId] or "")
-	local itemsFolder = shop and shop:FindFirstChild("Items")
-	local itemVal = itemsFolder and itemsFolder:FindFirstChild(itemName)
-	if itemVal then
-		local walletStat = getWalletStatName()
-		local p = itemVal:GetAttribute("Price") or itemVal:GetAttribute("Cost") or itemVal:GetAttribute(walletStat) or itemVal:GetAttribute("Sheckles") or itemVal:GetAttribute("Leaves")
-		if p then return p end
-	end
-	if categoryId == 1 then
-		return getbaseprice(itemName)
-	end
-	return 0
-end
-
-function isinstock(itemName, categoryId, virtualMoney)
-	local currentMoney = virtualMoney
-	if not currentMoney then
-		currentMoney = getPlayerCurrency()
-	end
-	
-	local price = getItemPrice(itemName, categoryId)
-	if currentMoney < price then
-		return false
-	end
-	local isEnabled = true
-	pcall(function()
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
-		if categoryId == 1 then
-			local shopEnabled = require(ReplicatedStorage.SharedModules.SeedShopEnabled)
-			if shopEnabled and not shopEnabled.IsSeedEnabled(itemName) then
-				isEnabled = false
-			end
-		elseif categoryId == 2 then
-			local shopEnabled = require(ReplicatedStorage.SharedModules.GearShopABTest)
-			if shopEnabled and not shopEnabled.IsGearEnabled(localPlayer, itemName) then
-				isEnabled = false
-			end
-		elseif categoryId == 3 then
-			local shopEnabled = require(ReplicatedStorage.SharedModules.CrateShopEnabled)
-			if shopEnabled and not shopEnabled.IsCrateEnabled(itemName) then
-				isEnabled = false
-			end
-		end
-	end)
-	if not isEnabled then
-		return false
-	end
-	local shopNames = {
-		[1] = "SeedShop",
-		[2] = "GearShop",
-		[3] = "CrateShop"
-	}
-	local shopName = shopNames[categoryId]
-	if not shopName then return true end
-	local stockValues = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-	if not stockValues then return false end
-	local shopFolder = stockValues:FindFirstChild(shopName)
-	if not shopFolder then return false end
-	local itemsFolder = shopFolder:FindFirstChild("Items")
-	if not itemsFolder then return false end
-	local itemVal = itemsFolder:FindFirstChild(itemName)
-	if not itemVal then return false end
-	local val = nil
-	pcall(function() val = itemVal.Value end)
-	local limit = typeof(val) == "number" and val or (tonumber(val) or 0)
-	if limit <= 0 then
-		return false
-	end
-	if not itemVal:GetAttribute("Tracked") then
-		itemVal:SetAttribute("Tracked", true)
-		itemVal.Changed:Connect(function()
-			purchasedCurrentCycle[itemName] = 0
-		end)
-	end
-	local bought = purchasedCurrentCycle[itemName] or 0
-	return bought < limit
-end
-function getweightkg(obj, seedName)
-	if not obj then return 0 end
-	seedName = seedName or getseedname(obj)
-	if not seedName then return 0 end
-	local plant = (obj.Parent and obj.Parent.Name == "Fruits" and obj.Parent.Parent) or obj
-	if isSingleHarvestGardenObject(obj, plant) then
-		return getSingleHarvestWeightKg(obj)
-	end
-	local attrWeight = obj:GetAttribute("Weight")
-	if attrWeight then
-		return attrWeight > 100 and (attrWeight / 1000) or attrWeight
-	end
-	local sizeMulti = obj:GetAttribute("SizeMulti") or obj:GetAttribute("SizeMultiplier")
-	if not sizeMulti then
-		local isFruit = (obj.Parent and obj.Parent.Name == "Fruits")
-		local lastGen
-		if isFruit then
-			lastGen = obj:GetAttribute("LastGenerated") or obj:GetAttribute("PlantedAt")
-		else
-			lastGen = obj:GetAttribute("PlantedAt") or obj:GetAttribute("LastGenerated")
-		end
-		local psm = getPlantSizeMultipliers()
-		if lastGen and psm and typeof(psm) == "table" then
-			local ok, res
-			if isFruit and typeof(psm.GetRandomFruitSize) == "function" then
-				ok, res = pcall(function() return psm.GetRandomFruitSize(1, lastGen) end)
-			elseif typeof(psm.GetRandomPlantSize) == "function" then
-				local stage = obj:GetAttribute("Age") or obj:GetAttribute("MaxAge") or 1
-				ok, res = pcall(function() return psm.GetRandomPlantSize(stage, lastGen, seedName) end)
-			end
-			if ok and res then sizeMulti = res end
-		end
-	end
-	if not sizeMulti then sizeMulti = 1 end
-	local baseWeight = getbaseweight(seedName) or 1
-	local realWeight = baseWeight * sizeMulti
-	local finalWeight = realWeight > 50 and (realWeight / 1000) or realWeight
-	return finalWeight
-end
-local function findDescendantOfClass(root, className)
-	if not root then
-		return nil
-	end
-	if root:IsA(className) then
-		return root
-	end
-	if typeof(root.FindFirstChildWhichIsA) == "function" then
-		local found = root:FindFirstChildWhichIsA(className, true)
-		if found then
-			return found
-		end
-	end
-	for _, desc in root:GetDescendants() do
-		if desc:IsA(className) then
-			return desc
-		end
-	end
-	return nil
-end
-
-local function weightallowed(obj, seedName)
-	if minweight == 0 and maxweight == 0 then return true end
-	local w = getweightkg(obj, seedName)
-	if minweight ~= 0 and w < minweight then return false end
-	if maxweight ~= 0 and w > maxweight then return false end
-	return true
-end
-local harvestCooldown = {}
-local harvestCooldownSec = 0.4
-
-local function isRipeCrop(obj)
-	local age = obj:GetAttribute("Age")
-	local maxAge = obj:GetAttribute("MaxAge")
-	if typeof(age) ~= "number" or typeof(maxAge) ~= "number" then
-		return true
-	end
-	return age >= maxAge
-end
-
-local function fireCollect(collectEvent, plantId, fruitId)
-	local key = plantId .. ":" .. (fruitId or "")
-	local now = os.clock()
-	if harvestCooldown[key] and now - harvestCooldown[key] < harvestCooldownSec then
+function syde:UpdateTheme(Config)
+	if type(Config) ~= "table" then
+		warn("[UpdateTheme] Invalid configuration table")
 		return
 	end
-	harvestCooldown[key] = now
-	pcall(function()
-		collectEvent:Fire(plantId, fruitId or "")
-	end)
-end
 
-local function doharvest()
-	local farm = getPlayerFarm()
-	if not farm then
-		return
-	end
-	local plants = farm:FindFirstChild("Plants")
-	if not plants then
-		return
-	end
-	local netMod = findModule and findModule("Networking")
-	local Networking = netMod and safeRequire and safeRequire(netMod)
-	local collectEvent = Networking and Networking.Garden and Networking.Garden.CollectFruit
-	if not collectEvent then
-		return
-	end
-	local plantBehaviorRules = nil
-	pcall(function()
-		plantBehaviorRules = require(game:GetService("ReplicatedStorage").SharedModules.PlantBehaviorRules)
-	end)
-	for _, plant in plants:GetChildren() do
-		if not running then
-			break
-		end
-		local seedName = getseedname(plant)
-		if not seedName or seedName == "" then
-			continue
-		end
-		local plantId = plant:GetAttribute("PlantId") or plant.Name:match("^%d+_(.+)$")
-		if not plantId then
-			continue
-		end
-		local coreName = plant:GetAttribute("CorePartName") or plant:GetAttribute("SeedName") or seedName
-		if plantBehaviorRules and plantBehaviorRules.GrowsForever(coreName) then
-			continue
-		end
-		local fruitsFolder = plant:FindFirstChild("Fruits")
-		if fruitsFolder then
-			for _, fruit in fruitsFolder:GetChildren() do
-				if not running then
-					break
+	local updatedKeys = {}
+
+	for key, value in pairs(Config) do
+		if self.theme[key] ~= nil then
+			if typeof(self.theme[key]) == typeof(value) then
+				if type(value) == "table" then
+					self:DeepMerge(self.theme[key], value)
+				else
+					self.theme[key] = value
 				end
-				if not isRipeCrop(fruit) then
-					continue
-				end
-				local mutation = fruit:GetAttribute("Mutation") or "None"
-				if not allowed(seedName) or not mutallowed(mutation) or not weightallowed(fruit, seedName) then
-					continue
-				end
-				local fruitId = fruit:GetAttribute("FruitId") or fruit.Name:match("^%d+_%d+_(.+)$") or ""
-				fireCollect(collectEvent, plantId, fruitId)
-			end
-		elseif isRipeCrop(plant) then
-			local mutation = plant:GetAttribute("Mutation") or "None"
-			if allowed(seedName) and mutallowed(mutation) and weightallowed(plant, seedName) then
-				fireCollect(collectEvent, plantId, "")
-			end
-		end
-	end
-end
-hub:CreateTab("Main", "rbxassetid://13060262529")
-hub:CreateModule("Main", {
-	name = "Auto Harvest",
-	on = false,
-	bind = "None",
-	desc = "Auto harvest crops.",
-	callback = function(enabled)
-		running = enabled
-		if enabled then
-			task.spawn(function()
-				while running do
-					doharvest()
-					task.wait(math.max(harvestDelay, 0))
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Harvest Delay", value = 0, min = 0, max = 100, increment = 1, suffix = " ds", callback = function(value)
-			harvestDelay = value / 10
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Blacklist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			ftype = value
-		end},
-		{type = "multiselect", label = "Filter Fruits", value = "None", list = gameLists.crops, callback = function(value)
-			flist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "crops")
-		end},
-		{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			muttype = value
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			mutlist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "mutations")
-		end},
-		{type = "slider", label = "Min Weight (kg)", value = 0, min = 0, max = 100, increment = 1, suffix = " kg", callback = function(value)
-			minweight = value
-		end},
-		{type = "slider", label = "Max Weight (kg)", value = 0, min = 0, max = 100, increment = 1, suffix = " kg", callback = function(value)
-			maxweight = value
-		end},
-	}
-})
-local sellev = nil
-pcall(function()
-	local sm = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules") or game:GetService("ReplicatedStorage"):WaitForChild("SharedModules", 5)
-	local pkt = sm and (sm:FindFirstChild("Packet") or sm:WaitForChild("Packet", 3))
-	sellev = pkt and (pkt:FindFirstChild("RemoteEvent") or pkt:WaitForChild("RemoteEvent", 3))
-end)
-valCalc = nil
-seedData = nil
-weightFormat = nil
-plantSizeMultipliers = nil
-safeRequire = nil
-findModule = nil
-findShovelTool = nil
-pcall(function()
-	safeRequire = function(module)
-		local success, result = pcall(require, module)
-		if success then
-			return result
-		end
-		local success3, clone = pcall(function() return module:Clone() end)
-		if success3 and clone then
-			clone.Parent = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("Workspace")
-			local success4, result4 = pcall(require, clone)
-			clone:Destroy()
-			if success4 then
-				return result4
-			end
-		end
-		local hasSource, source = pcall(function() return module.Source end)
-		if hasSource and typeof(source) == "string" and source ~= "" then
-			local fn, err = loadstring(source)
-			if fn then
-				local success5, result5 = pcall(fn)
-				if success5 then
-					return result5
-				end
-			end
-		end
-		return nil
-	end
-	findModule = function(name)
-		local sharedModules = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-		if sharedModules then
-			local found = sharedModules:FindFirstChild(name)
-			if found then return found end
-			for _, v in sharedModules:GetDescendants() do
-				if v:IsA("ModuleScript") and v.Name == name then
-					return v
-				end
-			end
-		end
-		return nil
-	end
-	local fd = findModule("SeedData")
-	if fd then
-		seedData = safeRequire(fd)
-	end
-	local fvc = findModule("FruitValueCalc")
-	if fvc then
-		valCalc = safeRequire(fvc)
-	end
-	local wf = findModule("WeightFormat")
-	if wf then
-		weightFormat = safeRequire(wf)
-	end
-	local psm = findModule("PlantSizeMultipliers")
-	if psm then
-		plantSizeMultipliers = safeRequire(psm)
-	end
-	pcall(refreshGameLists)
-	task.spawn(function()
-		local sv = game:GetService("ReplicatedStorage"):WaitForChild("StockValues", 30)
-		if sv then
-			sv.DescendantAdded:Connect(function()
-				task.defer(refreshGameLists)
-			end)
-		end
-	end)
-	task.spawn(function()
-		local count = 0
-		local sharedModules = game:GetService("ReplicatedStorage"):WaitForChild("SharedModules", 10)
-		if sharedModules then
-			task.wait(3)
-			local function registerModule(v)
-				if v:IsA("ModuleScript") then
-					local nameL = v.Name:lower()
-					if nameL:find("seed") or nameL:find("crop") or nameL:find("fruit") or nameL:find("plant") or nameL:find("weight") then
-						local success, res = pcall(safeRequire, v)
-						if success and res and typeof(res) == "table" then
-							local bw = nil
-							pcall(function()
-								bw = res.BaseWeight or res.baseweight or res.Weight or res.weight
-								if not bw and res.GrowData then
-									local gd = res.GrowData
-									bw = gd.BaseWeight or gd.baseweight or gd.Weight or gd.weight
-								end
-							end)
-							if bw then
-								local nameNoSpaces = v.Name:gsub("%s+", "")
-								local cleanName = nameNoSpaces:gsub("Seed$", "")
-								cropBaseWeights[v.Name] = bw
-								cropBaseWeights[nameNoSpaces] = bw
-								cropBaseWeights[cleanName] = bw
-								count = count + 1
-							end
-						end
-					end
-				end
-			end
-			for _, v in sharedModules:GetDescendants() do
-				task.spawn(registerModule, v)
-			end
-			sharedModules.DescendantAdded:Connect(function(v)
-				task.spawn(registerModule, v)
-			end)
-		end
-		local assets = game:GetService("ReplicatedStorage"):WaitForChild("Assets", 5)
-		local plants = assets and assets:WaitForChild("Plants", 5)
-		if plants then
-			for _, model in plants:GetChildren() do
-				local bw = model:GetAttribute("BaseWeight") or model:GetAttribute("baseweight") or model:GetAttribute("Weight") or model:GetAttribute("weight")
-				if bw then
-					local nameNoSpaces = model.Name:gsub("%s+", "")
-					cropBaseWeights[model.Name] = bw
-					cropBaseWeights[nameNoSpaces] = bw
-					count = count + 1
-				end
-			end
-		end
-		pcall(function()
-			local netMod = findModule("Networking")
-			local Networking = netMod and safeRequire(netMod)
-			if Networking and Networking.FruitStock then
-				local function updateStock(snapshot)
-					if typeof(snapshot) == "table" and typeof(snapshot.entries) == "table" then
-						for crop, data in pairs(snapshot.entries) do
-							if typeof(crop) == "string" and typeof(data) == "table" then
-								fruitStock[crop] = {
-									multiplier = typeof(data.multiplier) == "number" and data.multiplier or 1,
-									tier = typeof(data.tier) == "string" and data.tier or "normal"
-								}
-							end
-						end
-					end
-				end
-				Networking.FruitStock.Snapshot.OnClientEvent:Connect(updateStock)
-				local ok, result = pcall(function()
-					if Networking.FruitStock.Request.InvokeServer then
-						return Networking.FruitStock.Request:InvokeServer()
-					else
-						return Networking.FruitStock.Request:Fire()
-					end
-				end)
-				if ok and typeof(result) == "table" then
-					updateStock(result)
-				end
-			end
-		end)
-	end)
-end)
-favoriterunning = false
-favoritedelay = 1
-favoritetype = "Whitelist"
-favoritelist = ""
-favoritemuttype = "Whitelist"
-favoritemutlist = ""
-favoriteminweight = 0
-favoritemaxweight = 0
-favoritedIds = {}
-function getInventoryItems()
-	local items = {}
-	local bp = localPlayer:FindFirstChildOfClass("Backpack")
-	if bp then
-		for _, child in bp:GetChildren() do
-			if child:GetAttribute("HarvestedFruit") or child:GetAttribute("Id") then
-				table.insert(items, child)
-			end
-		end
-	end
-	local char = localPlayer.Character
-	if char then
-		for _, child in char:GetChildren() do
-			if child:IsA("Tool") then
-				if child:GetAttribute("HarvestedFruit") or child:GetAttribute("Id") then
-					table.insert(items, child)
-				end
-			end
-		end
-	end
-	return items
-end
-local function favoriteallowed(fruitName)
-	if favoritelist == "" or favoritelist == "None" then return favoritetype == "Blacklist" end
-	local set = {}
-	for s in (favoritelist .. ","):gmatch("([^,]+),") do
-		set[s:match("^%s*(.-)%s*$")] = true
-	end
-	if favoritetype == "Whitelist" then
-		return set[fruitName] == true
-	else
-		return set[fruitName] ~= true
-	end
-end
-local function favoritemutallowed(mut)
-	if not mut or mut == "" then mut = "None" end
-	if favoritemutlist == "" or favoritemutlist == "None" then return favoritemuttype == "Blacklist" end
-	local set = {}
-	for s in (favoritemutlist .. ","):gmatch("([^,]+),") do
-		set[s:match("^%s*(.-)%s*$")] = true
-	end
-	if favoritemuttype == "Whitelist" then
-		return set[mut] == true
-	else
-		return set[mut] ~= true
-	end
-end
-local function dofavorite()
-	local items = getInventoryItems()
-	local netMod = findModule("Networking")
-	local Networking = netMod and safeRequire(netMod)
-	if not Networking or not Networking.Backpack or not Networking.Backpack.SetFruitFavorite then return end
-	local setFavorite = Networking.Backpack.SetFruitFavorite
-	for _, item in items do
-		if not favoriterunning then break end
-		local itemId = item:GetAttribute("Id")
-		if itemId and not favoritedIds[itemId] then
-			local isFav = item:GetAttribute("Favorite") or item:GetAttribute("IsFavorite") or item:GetAttribute("Favored")
-			if isFav then
-				favoritedIds[itemId] = true
+				table.insert(updatedKeys, key)
 			else
-				local fruit = item:GetAttribute("Fruit") or item:GetAttribute("FruitName") or item.Name:gsub("%s*%b[]%s*$", "")
-				local mutation = item:GetAttribute("Mutation") or "None"
-				local weight = tonumber(item:GetAttribute("Weight")) or tonumber(item:GetAttribute("SizeMultiplier")) or 0
-				local allowed = favoriteallowed(fruit)
-				local mutAllowed = favoritemutallowed(mutation)
-				local matchesMin = (favoriteminweight == 0 or weight >= favoriteminweight)
-				local matchesMax = (favoritemaxweight == 0 or weight <= favoritemaxweight)
-				if allowed and mutAllowed and matchesMin and matchesMax then
-					pcall(function()
-						setFavorite:Fire(itemId, true)
-					end)
-					favoritedIds[itemId] = true
-					if not favoriterunning then break end
-					task.wait(0.1)
-				end
+				warn(("[UpdateTheme] Type mismatch for key '%s' (expected %s, got %s)"):format(
+					key, typeof(self.theme[key]), typeof(value)
+					))
 			end
+		else
+			warn("[UpdateTheme] Key '" .. key .. "' does not exist in theme")
+		end
+	end
+
+	if #updatedKeys > 0 then
+		for _, key in ipairs(updatedKeys) do
+			self.Comms:Fire(key, self.theme[key])
 		end
 	end
 end
-hub:CreateModule("Main", {
-	name = "Auto Favorite",
-	on = false,
-	bind = "None",
-	desc = "Favorite fruits by filter.",
-	callback = function(enabled)
-		favoriterunning = enabled
-		if enabled then
-			task.spawn(function()
-				while favoriterunning do
-					pcall(dofavorite)
-					task.wait(favoritedelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Delay", value = 1, min = 1, max = 30, suffix = "s", callback = function(value)
-			favoritedelay = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			favoritetype = value
-		end},
-		{type = "multiselect", label = "Filter Fruits", value = "None", list = gameLists.crops, callback = function(value)
-			favoritelist = value
-		end},
-		{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			favoritemuttype = value
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			favoritemutlist = value
-		end},
-		{type = "textbox", label = "Min Weight Filter (kg)", value = "0", placeholder = "Enter min weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			favoriteminweight = num or 0
-		end},
-		{type = "textbox", label = "Max Weight Filter (kg)", value = "0", placeholder = "Enter max weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			favoritemaxweight = num or 0
-		end},
-	}
-})
+
+-- @ControllerSupport / numeric helpers
+
+-- True if an input can be used as a bind (keyboard key OR controller button)
+function syde:IsBindableInput(input)
+	local t = input.UserInputType
+	if t == Enum.UserInputType.Keyboard then
+		return true
+	end
+	if string.find(tostring(t), "Gamepad", 1, true) then
+		return input.KeyCode ~= Enum.KeyCode.Unknown
+	end
+	return false
 end
-do
-	sprinklerrunning = false
-	sprinklerdelay = 2
-	sprinklerlist = ""
-	sprinklerfiltertype = "Blacklist"
-	sprinklerfilterlist = ""
-	sprinklermode = "On Plants"
-	sprinklernoduplicates = true
-	local savedSprinklerPositions = {}
-	local sprinklerPosParagraph = nil
-	local sprinklerPosListIndex = 1
-	local sprinklerZoneMin = nil
-	local sprinklerZoneMax = nil
-	local sprinklerZoneStartPos = nil
-	local sprinklerSelecting = false
-	local sprinklerSelectionPart = nil
-	local sprinklerSelectionRunConn = nil
-	local sprinklerSelectionClickConn = nil
-	local sprinklerSelectionKeyConn = nil
-	local sprinklerLastOffset = Vector3.zero
-	local sprinklerTypeList = getSprinklerNameList()
-	local function cleanupSprinklerSelection()
-		if sprinklerSelectionClickConn then sprinklerSelectionClickConn:Disconnect() sprinklerSelectionClickConn = nil end
-		if sprinklerSelectionRunConn then sprinklerSelectionRunConn:Disconnect() sprinklerSelectionRunConn = nil end
-		if sprinklerSelectionKeyConn then sprinklerSelectionKeyConn:Disconnect() sprinklerSelectionKeyConn = nil end
-		if sprinklerSelectionPart then
-			sprinklerSelectionPart:Destroy()
-			sprinklerSelectionPart = nil
-		end
-		sprinklerZoneStartPos = nil
-		local mouse = localPlayer:GetMouse()
-		if mouse.TargetFilter == sprinklerSelectionPart then
-			mouse.TargetFilter = nil
-		end
-		sprinklerSelecting = false
+
+-- Number of decimal places a number has (handles 0.01, 0.05, etc. correctly)
+function syde:DecimalPlaces(num)
+	local str = string.format("%.10f", tonumber(num) or 0)
+	str = str:gsub("0+$", "")
+	str = str:gsub("%.$", "")
+	local dot = string.find(str, "%.", 1, true)
+	if not dot then
+		return 0
 	end
-	local function formatSprinklerPosList()
-		if sprinklermode == "Part" then
-			if #savedSprinklerPositions == 0 then
-				return "No saved points.\nUse Add Point to place one."
-			end
-			local lines = {}
-			for i, pos in savedSprinklerPositions do
-				lines[#lines + 1] = string.format("#%d: %.1f, %.1f, %.1f", i, pos.X, pos.Y, pos.Z)
-			end
-			return table.concat(lines, "\n")
-		end
-		if sprinklermode == "Zone" and sprinklerZoneMin and sprinklerZoneMax then
-			return string.format(
-				"Zone saved:\nX %.1f -> %.1f\nZ %.1f -> %.1f",
-				sprinklerZoneMin.X, sprinklerZoneMax.X, sprinklerZoneMin.Z, sprinklerZoneMax.Z
-			)
-		end
-		if sprinklermode == "HumanoidRootPart" then
-			return "Places at player position."
-		end
-		if sprinklermode == "On Plants" then
-			return "Places on filtered plants."
-		end
-		return "Uses random valid soil spots."
+	return #str - dot
+end
+
+-- Round a number to a fixed number of decimal places (removes float drift)
+function syde:RoundTo(num, decimals)
+	local mult = 10 ^ (decimals or 0)
+	return math.floor(num * mult + 0.5) / mult
+end
+
+-- Copy text to the clipboard across common executor globals. Returns true on success.
+function syde:SetClipboard(text)
+	local fn = setclipboard or toclipboard or set_clipboard or writeclipboard or (syn and syn.write_clipboard)
+	if fn then
+		return (pcall(fn, text))
 	end
-	local function updateSprinklerPosDisplay()
-		if sprinklerPosParagraph then
-			setHubParagraph(sprinklerPosParagraph, formatSprinklerPosList(), "Saved Positions")
-		end
+	return false
+end
+
+-- Connect a click handler whether the target is a GuiButton, has an "interact" child, or is a plain label.
+function syde:OnClick(object, callback)
+	if not object then return end
+	local target = object:FindFirstChild("interact") or object:FindFirstChild("Interact") or object
+	if target:IsA("GuiButton") then
+		target.MouseButton1Click:Connect(callback)
+	else
+		target.Active = true
+		target.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch then
+				callback()
+			end
+		end)
 	end
-	local function getNextSprinklerPosition(farm)
-		if sprinklermode == "HumanoidRootPart" then
-			local basePos = getGroundUnderPlayer()
-			if not basePos then
-				return nil
-			end
-			for _ = 1, 10 do
-				local testPos = basePos + sprinklerLastOffset
-				local projected, isValid = projectToSoil(testPos)
-				if isValid and isPositionInPlantArea(projected) then
-					return projected
-				end
-				local angle = math.random() * math.pi * 2
-				local dist = 0.4 + math.random() * 0.8
-				sprinklerLastOffset = Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
-			end
-			local projected, isValid = projectToSoil(basePos)
-			return isValid and projected or basePos
-		end
-		if sprinklermode == "Random" then
-			local pos = farm and GetRandomPlantingPosition(farm)
-			if not pos then
-				local cols = getPlantAreaColumns()
-				if #cols > 0 then
-					pos = getRandomPointInColumn(cols[math.random(1, #cols)])
-				end
-			end
-			if pos then
-				local projected, isValid = projectToSoil(pos)
-				if isValid then
-					return projected
-				end
-			end
-			return pos
-		end
-		if sprinklermode == "Part" then
-			if #savedSprinklerPositions == 0 then
-				return nil
-			end
-			for _ = 1, #savedSprinklerPositions do
-				local entry = savedSprinklerPositions[sprinklerPosListIndex]
-				sprinklerPosListIndex = sprinklerPosListIndex + 1
-				if sprinklerPosListIndex > #savedSprinklerPositions then
-					sprinklerPosListIndex = 1
-				end
-				local projected, isValid = projectToSoil(entry)
-				if isValid then
-					return projected
-				end
-			end
+end
+
+-- Brief green flash on a copy icon to confirm the copy worked.
+function syde:FlashCopy(icon)
+	if not icon then return end
+	tweenservice:Create(icon, TweenInfo.new(0.12, Enum.EasingStyle.Quint), { ImageColor3 = Color3.fromRGB(120, 220, 120) }):Play()
+	task.delay(0.4, function()
+		tweenservice:Create(icon, TweenInfo.new(0.3, Enum.EasingStyle.Quint), { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+	end)
+end
+
+-- Branded error reporter: prints a "screenshot this" banner, the error, and a likely fix.
+function syde:Report(context, err)
+	local message = tostring(err or "unknown error")
+	local low = string.lower(message)
+
+	local fix
+	if string.find(low, "httpget", 1, true) or string.find(low, "getobjects", 1, true)
+		or string.find(low, "failed to load library", 1, true) or string.find(low, "rbxassetid", 1, true) then
+		fix = "The UI asset/source failed to download. Re-run it; if it keeps happening your executor is blocking HttpGet/asset loading, or GitHub is serving an old/partial copy (wait ~30s)."
+	elseif string.find(low, "not a valid member", 1, true) or string.find(low, "attempt to index nil", 1, true)
+		or string.find(low, "index a nil", 1, true) then
+		fix = "A UI element is missing - your Source and the UI asset id are out of sync. Re-copy the newest Source and re-grab the UI asset."
+	elseif string.find(low, "attempt to call a nil value", 1, true) then
+		fix = "A required function is missing - usually an executor that lacks a global like gethui/getgenv/setclipboard. Try an updated/different executor."
+	elseif string.find(low, "callback", 1, true) then
+		fix = "This came from a callback (your own function), not Syde itself. Check the function attached to that element."
+	else
+		fix = "Unexpected error - send the screenshot above so it can be looked into."
+	end
+
+	warn(table.concat({
+		"",
+		"----------screenshot this and send it to king jericoo------",
+		"[ Syde ] " .. tostring(context or "Error"),
+		"Problem: " .. message,
+		"Fix: " .. fix,
+		"------------------------------------------------------------",
+		"",
+	}, "\n"))
+end
+
+-- Wrap a function so any error it throws is reported via the banner (and swallowed).
+function syde:Guard(context, fn)
+	return function(...)
+		local res = table.pack(pcall(fn, ...))
+		if not res[1] then
+			syde:Report(context, res[2])
 			return nil
 		end
-		if sprinklermode == "Zone" then
-			for _ = 1, 12 do
-				local pos = getRandomPointInZone(sprinklerZoneMin, sprinklerZoneMax)
-				if pos then
-					return pos
-				end
+		return table.unpack(res, 2, res.n)
+	end
+end
+
+-- Make a slider's value label clickable so the user can type an exact number.
+-- Out-of-range or invalid input reverts to the previous value.
+function syde:AttachSliderInput(Slider, Options)
+	local valueLabel = Slider:FindFirstChild("v")
+	if not valueLabel or valueLabel:FindFirstChild("ValueInput") then
+		return
+	end
+
+	-- formatted "/max" suffix that stays visible while typing
+	local function maxString()
+		local dp = syde:DecimalPlaces(Options.Increment)
+		return string.format("%." .. dp .. "f", tonumber(Options.Range[2]) or 0)
+	end
+
+	-- render the label as "<valueText>/<max>" (valueText shown verbatim)
+	local function renderValue(valueText)
+		valueLabel.Text = string.format("<font size='14'>%s</font><font color='#434343'>/%s</font>", valueText, maxString())
+	end
+
+	-- re-render the label with the slider's current value
+	local function renderCurrent()
+		local dp = syde:DecimalPlaces(Options.Increment)
+		renderValue(string.format("%." .. dp .. "f", tonumber(Options.StarterValue) or 0))
+	end
+
+	local editing = false
+
+	local editBox = Instance.new("TextBox")
+	editBox.Name = "ValueInput"
+	editBox.BackgroundTransparency = 1
+	editBox.Text = ""
+	editBox.PlaceholderText = ""
+	editBox.TextEditable = true
+	editBox.ClearTextOnFocus = false
+	editBox.RichText = false
+	editBox.MultiLine = false
+	editBox.Active = true
+	editBox.Selectable = true
+	editBox.TextTransparency = 1   -- invisible; live feedback is shown on the label itself
+	editBox.TextSize = 14
+	editBox.Size = UDim2.fromScale(1, 1)
+	editBox.Position = UDim2.fromScale(0, 0)
+	editBox.ZIndex = valueLabel.ZIndex + 5
+	editBox.Parent = valueLabel
+
+	editBox.Focused:Connect(function()
+		editing = true
+		editBox.Text = ""      -- box starts empty on click
+		renderValue("")        -- value cleared, the "/max" suffix stays visible
+	end)
+
+	editBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if not editing then return end
+		renderValue(editBox.Text)   -- live-update the label as the user types
+	end)
+
+	editBox.FocusLost:Connect(function()
+		editing = false
+		local raw = editBox.Text
+		editBox.Text = ""
+
+		local typed = tonumber(raw)
+		local low = math.min(Options.Range[1], Options.Range[2])
+		local high = math.max(Options.Range[1], Options.Range[2])
+
+		if raw ~= "" and typed and typed >= low and typed <= high and Options.Set then
+			local inc = Options.Increment or 1
+			if inc > 0 then
+				-- snap to the slider's increment and round away float drift
+				typed = math.floor((typed - low) / inc + 0.5) * inc + low
+				typed = syde:RoundTo(typed, syde:DecimalPlaces(inc))
+				typed = math.clamp(typed, low, high)
 			end
+			Options:Set(typed)
+		else
+			-- typed nothing / invalid / out of range -> revert to the previous value
+			renderCurrent()
+		end
+	end)
+
+	return editBox
+end
+
+-- fractality
+
+local RunService = game:GetService'RunService'
+local camera = workspace.CurrentCamera
+
+
+do
+	local function IsNotNaN(x)
+		return x == x
+	end
+	local continue = IsNotNaN(camera:ScreenPointToRay(0,0).Origin.x)
+	while not continue do
+		RunService.RenderStepped:wait()
+		continue = IsNotNaN(camera:ScreenPointToRay(0,0).Origin.x)
+	end
+end
+
+cleanupBlurArtifacts()
+
+local binds = {}
+local root = Instance.new('Folder', camera)
+root.Name = BIND_ROOT_NAME
+
+
+local GenUid; do -- Generate unique names for RenderStepped bindings
+	local id = 0
+	function GenUid()
+		id = id + 1
+		return 'neon::'..tostring(id)
+	end
+end
+
+local DrawQuad; do
+	local acos, max, pi, sqrt = math.acos, math.max, math.pi, math.sqrt
+	local sz = 0.2
+
+	local function getWedgeMesh(part)
+		if not part then
+			return nil
+		end
+		local mesh = part:FindFirstChild("WedgeMesh")
+		if mesh and mesh:IsA("SpecialMesh") then
+			return mesh
 		end
 		return nil
 	end
-	local function startSprinklerPositionSelection()
-		if sprinklerSelecting then
-			cleanupSprinklerSelection()
-			hub:Notify("Selection cancelled.")
-			return
-		end
-		if sprinklermode ~= "Part" and sprinklermode ~= "Zone" then
-			hub:Notify("Switch Mode to Part or Zone first.")
-			return
-		end
-		sprinklerSelecting = true
-		sprinklerZoneStartPos = nil
-		local mouse = localPlayer:GetMouse()
+
+	local function createWedgePart()
 		local part = Instance.new("Part")
-		part.Size = Vector3.new(2, 0.4, 2)
+		part.FormFactor = "Custom"
+		part.TopSurface = 0
+		part.BottomSurface = 0
 		part.Anchored = true
 		part.CanCollide = false
-		part.CanTouch = false
-		part.CanQuery = false
-		part.Material = Enum.Material.Neon
-		part.Transparency = 0.35
-		part.Parent = workspace
-		sprinklerSelectionPart = part
-		mouse.TargetFilter = part
-		local hl = Instance.new("Highlight")
-		hl.FillTransparency = 0.45
-		hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-		hl.OutlineTransparency = 0
-		hl.Adornee = part
-		hl.Parent = part
-		sprinklerSelectionRunConn = RS.RenderStepped:Connect(function()
-			if not part.Parent then
-				cleanupSprinklerSelection()
-				return
-			end
-			local projected, isValid = projectToSoil(mouse.Hit.Position)
-			if sprinklermode == "Zone" and sprinklerZoneStartPos then
-				local snapGrid = 2
-				local startX = math.round(sprinklerZoneStartPos.X / snapGrid) * snapGrid
-				local startZ = math.round(sprinklerZoneStartPos.Z / snapGrid) * snapGrid
-				local currX = math.round(projected.X / snapGrid) * snapGrid
-				local currZ = math.round(projected.Z / snapGrid) * snapGrid
-				local minX = math.min(startX, currX) - 1
-				local maxX = math.max(startX, currX) + 1
-				local minZ = math.min(startZ, currZ) - 1
-				local maxZ = math.max(startZ, currZ) + 1
-				part.Size = Vector3.new(maxX - minX, 3, maxZ - minZ)
-				part.Position = Vector3.new((minX + maxX) / 2, projected.Y + 1.5, (minZ + maxZ) / 2)
-			else
-				if sprinklermode == "Zone" then
-					part.Size = Vector3.new(0.8, 0.8, 0.8)
-				else
-					part.Size = Vector3.new(2, 0.4, 2)
-				end
-				part.Position = projected
-			end
-			if isValid then
-				part.Color = Color3.fromRGB(100, 200, 255)
-				hl.FillColor = Color3.fromRGB(100, 200, 255)
-			else
-				part.Color = Color3.fromRGB(240, 80, 80)
-				hl.FillColor = Color3.fromRGB(240, 80, 80)
-			end
-		end)
-		sprinklerSelectionClickConn = mouse.Button1Down:Connect(function()
-			local projected, isValid = projectToSoil(mouse.Hit.Position)
-			if sprinklermode == "Zone" then
-				if not sprinklerZoneStartPos then
-					local snapGrid = 2
-					sprinklerZoneStartPos = Vector3.new(
-						math.round(projected.X / snapGrid) * snapGrid,
-						projected.Y,
-						math.round(projected.Z / snapGrid) * snapGrid
-					)
-					hub:Notify("First corner set. Click again to expand zone.")
-				else
-					local snapGrid = 2
-					local startX = math.round(sprinklerZoneStartPos.X / snapGrid) * snapGrid
-					local startZ = math.round(sprinklerZoneStartPos.Z / snapGrid) * snapGrid
-					local currX = math.round(projected.X / snapGrid) * snapGrid
-					local currZ = math.round(projected.Z / snapGrid) * snapGrid
-					local minX = math.min(startX, currX) - 1
-					local maxX = math.max(startX, currX) + 1
-					local minZ = math.min(startZ, currZ) - 1
-					local maxZ = math.max(startZ, currZ) + 1
-					sprinklerZoneMin = Vector3.new(minX, projected.Y, minZ)
-					sprinklerZoneMax = Vector3.new(maxX, projected.Y + 3, maxZ)
-					cleanupSprinklerSelection()
-					updateSprinklerPosDisplay()
-					hub:Notify("Sprinkler zone saved.")
-				end
-			elseif isValid then
-				savedSprinklerPositions[#savedSprinklerPositions + 1] = projected
-				cleanupSprinklerSelection()
-				updateSprinklerPosDisplay()
-				hub:Notify("Sprinkler point saved.")
-			else
-				hub:Notify("Cannot place here.")
-			end
-		end)
-		sprinklerSelectionKeyConn = UIS.InputBegan:Connect(function(input, gpe)
-			if gpe then return end
-			if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.X then
-				cleanupSprinklerSelection()
-				hub:Notify("Selection cancelled.")
-			end
-		end)
+		part.Material = "Glass"
+		part.Size = Vector3.new(sz, sz, sz)
+		local mesh = Instance.new("SpecialMesh", part)
+		mesh.MeshType = Enum.MeshType.Wedge
+		mesh.Name = "WedgeMesh"
+		return part
 	end
-	local function sprinklerallowed(plantName)
-		if sprinklerfilterlist == "" then return sprinklerfiltertype == "Blacklist" end
-		local set = {}
-		for s in (sprinklerfilterlist .. ","):gmatch("([^,]+),") do
-			set[s:match("^%s*(.-)%s*$")] = true
+
+	local function ensureWedgePart(part)
+		if part and part.Parent and getWedgeMesh(part) then
+			return part
 		end
-		if sprinklerfiltertype == "Whitelist" then
-			return set[plantName] == true
-		else
-			return set[plantName] ~= true
-		end
+		return createWedgePart()
 	end
-	local function getPlantAtPosition(pos, farm)
-		local plants = farm and farm:FindFirstChild("Plants")
-		if plants then
-			for _, plant in plants:GetChildren() do
-				local pPart = plant.PrimaryPart or plant:FindFirstChild("HarvestPart") or plant:FindFirstChildWhichIsA("BasePart", true)
-				if pPart then
-					local dx = pPart.Position.X - pos.X
-					local dz = pPart.Position.Z - pos.Z
-					local dist = math.sqrt(dx * dx + dz * dz)
-					if dist < 6 then
-						return plant
-					end
-				else
-				end
-			end
-		else
+
+	function DrawTriangle(v1, v2, v3, p0, p1) -- I think Stravant wrote this function
+		local s1 = (v1 - v2).magnitude
+		local s2 = (v2 - v3).magnitude
+		local s3 = (v3 - v1).magnitude
+		local smax = max(s1, s2, s3)
+		local A, B, C
+		if s1 == smax then
+			A, B, C = v1, v2, v3
+		elseif s2 == smax then
+			A, B, C = v2, v3, v1
+		elseif s3 == smax then
+			A, B, C = v3, v1, v2
 		end
-		return nil
+
+		local para = ( (B-A).x*(C-A).x + (B-A).y*(C-A).y + (B-A).z*(C-A).z ) / (A-B).magnitude
+		local perp = sqrt((C-A).magnitude^2 - para*para)
+		local dif_para = (A - B).magnitude - para
+
+		local st = CFrame.new(B, A)
+		local za = CFrame.Angles(pi/2,0,0)
+
+		local cf0 = st
+
+		local Top_Look = (cf0 * za).lookVector
+		local Mid_Point = A + CFrame.new(A, B).lookVector * para
+		local Needed_Look = CFrame.new(Mid_Point, C).lookVector
+		local dot = Top_Look.x*Needed_Look.x + Top_Look.y*Needed_Look.y + Top_Look.z*Needed_Look.z
+
+		local ac = CFrame.Angles(0, 0, acos(dot))
+
+		cf0 = cf0 * ac
+		if ((cf0 * za).lookVector - Needed_Look).magnitude > 0.01 then
+			cf0 = cf0 * CFrame.Angles(0, 0, -2*acos(dot))
+		end
+		cf0 = cf0 * CFrame.new(0, perp/2, -(dif_para + para/2))
+
+		local cf1 = st * ac * CFrame.Angles(0, pi, 0)
+		if ((cf1 * za).lookVector - Needed_Look).magnitude > 0.01 then
+			cf1 = cf1 * CFrame.Angles(0, 0, 2*acos(dot))
+		end
+		cf1 = cf1 * CFrame.new(0, perp/2, dif_para/2)
+
+		p0 = ensureWedgePart(p0)
+		local mesh0 = getWedgeMesh(p0)
+		if mesh0 then
+			mesh0.Scale = Vector3.new(0, perp / sz, para / sz)
+		end
+		p0.CFrame = cf0
+
+		p1 = ensureWedgePart(p1)
+		local mesh1 = getWedgeMesh(p1)
+		if mesh1 then
+			mesh1.Scale = Vector3.new(0, perp / sz, dif_para / sz)
+		end
+		p1.CFrame = cf1
+
+		return p0, p1
 	end
-	local function tryPlaceSprinkler(Networking, targetPos, sprinklerName, tool, plotId, farm)
-		targetPos = raycastPlantAreaPosition(targetPos, farm)
-		if isTooCloseToSprinklerStack(farm, targetPos) then
-			return false
-		end
-		if sprinklernoduplicates and isPositionCoveredBySprinkler(farm, targetPos) then
-			return false
-		end
-		local ok = pcall(function()
-			Networking.Place.PlaceSprinkler:Fire(targetPos, sprinklerName, tool, tonumber(plotId))
-		end)
-		if ok then
-			task.wait(0.1)
-		end
-		return ok
+
+	function DrawQuad(v1, v2, v3, v4, parts)
+		parts[1], parts[2] = DrawTriangle(v1, v2, v3, parts[1], parts[2])
+		parts[3], parts[4] = DrawTriangle(v3, v2, v4, parts[3], parts[4])
 	end
-	local function dosprinkler()
-		if sprinklerlist == "" then return end
-		local netMod = findModule("Networking")
-		local Networking = netMod and safeRequire(netMod)
-		if not Networking or not Networking.Place or not Networking.Place.PlaceSprinkler then return end
-		local bp = localPlayer:FindFirstChildOfClass("Backpack")
-		local char = localPlayer.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if not char or not hum then return end
-		local plotId = localPlayer:GetAttribute("PlotId")
-		if not plotId then return end
-		local farm = getPlayerFarm()
-		if not farm then return end
-		for s in (sprinklerlist .. ","):gmatch("([^,]+),") do
-			local name = s:match("^%s*(.-)%s*$")
-			local tool = char:FindFirstChild(name) or (bp and bp:FindFirstChild(name))
-			if tool then
-				local sprinklerName = tool:GetAttribute("Sprinkler") or name
-				local needsUnequip = false
-				if tool.Parent == bp then
-					hum:EquipTool(tool)
-					needsUnequip = true
-					task.wait(0.25)
-				end
-				if sprinklermode == "On Plants" then
-					local plantsFolder = farm:FindFirstChild("Plants")
-					if plantsFolder then
-						for _, plant in plantsFolder:GetChildren() do
-							local seedName = plant:GetAttribute("SeedName") or ""
-							if sprinklerallowed(seedName) then
-								local pPart = plant.PrimaryPart or plant:FindFirstChild("HarvestPart") or plant:FindFirstChildWhichIsA("BasePart", true)
-								if pPart then
-									tryPlaceSprinkler(Networking, pPart.Position, sprinklerName, tool, plotId, farm)
-								end
-							end
-						end
-					end
-					if sprinklerfilterlist == "" and sprinklerfiltertype == "Blacklist" then
-						local dirtPlots = {}
-						local imp = farm:FindFirstChild("Important", true)
-						local locs = imp and imp:FindFirstChild("Plant_Locations")
-						if locs then
-							for _, part in locs:GetChildren() do
-								if part:IsA("BasePart") and part.Name == "Can_Plant" then
-									table.insert(dirtPlots, part)
-								end
-							end
-						end
-						if #dirtPlots == 0 then
-							for _, child in farm:GetDescendants() do
-								if child:IsA("BasePart") and (child.Name == "PlantArea" or child.Name:find("PlantArea") or game:GetService("CollectionService"):HasTag(child, "PlantArea")) then
-									table.insert(dirtPlots, child)
-								end
-							end
-						end
-						for _, plot in dirtPlots do
-							tryPlaceSprinkler(Networking, plot.Position, sprinklerName, tool, plotId, farm)
-						end
-					end
-				else
-					local targetPos = getNextSprinklerPosition(farm)
-					if targetPos and (sprinklermode == "Random" or isPositionInPlantArea(targetPos)) then
-						tryPlaceSprinkler(Networking, targetPos, sprinklerName, tool, plotId, farm)
-					end
-				end
-				if needsUnequip and tool.Parent == char then
-					tool.Parent = bp
-				end
-			end
-		end
-	end
-	function updateSprinklerPosVisibility()
-		updateSprinklerPosDisplay()
-	end
-	hub:CreateModule("Main", {
-		name = "Auto Sprinkler",
-		on = false,
-		bind = "None",
-		desc = "Place sprinklers by filter.",
-		callback = function(enabled)
-			sprinklerrunning = enabled
-			if enabled then
-				task.spawn(function()
-					while sprinklerrunning do
-						pcall(dosprinkler)
-						task.wait(sprinklerdelay)
-					end
-				end)
-			else
-				cleanupSprinklerSelection()
-			end
-		end,
-		opts = {
-			{type = "slider", label = "Use Interval", value = 5, min = 1, max = 60, suffix = "s", callback = function(value)
-				sprinklerdelay = value
-			end},
-			{type = "dropdown", label = "Mode", value = "On Plants", list = {"On Plants", "Random", "HumanoidRootPart", "Part", "Zone"}, callback = function(value)
-				sprinklermode = value
-				if sprinklermode ~= "Part" and sprinklermode ~= "Zone" then
-					cleanupSprinklerSelection()
-				end
-				updateSprinklerPosDisplay()
-			end},
-			{type = "paragraph", title = "Saved Positions", content = "Loading...", onCreate = function(widget)
-				sprinklerPosParagraph = widget
-				updateSprinklerPosDisplay()
-			end},
-			{type = "button", label = "Add Point / Select Zone", callback = startSprinklerPositionSelection},
-			{type = "button", label = "Clear Saved", callback = function()
-				table.clear(savedSprinklerPositions)
-				sprinklerZoneMin = nil
-				sprinklerZoneMax = nil
-				sprinklerPosListIndex = 1
-				updateSprinklerPosDisplay()
-				hub:Notify("Saved sprinkler data cleared.")
-			end},
-			{type = "checkbox", label = "No Duplicates (Check Range)", value = true, callback = function(value)
-				sprinklernoduplicates = value
-			end},
-			{type = "multiselect", label = "Select Sprinklers", value = "", list = sprinklerTypeList, callback = function(value)
-				sprinklerlist = value
-			end},
-			{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-				sprinklerfiltertype = value
-			end},
-			{type = "multiselect", label = "Filter Plants", value = "None", list = gameLists.plants, callback = function(value)
-				sprinklerfilterlist = value
-			end},
-		}
-	})
 end
-do
-sellrunning = false
-selldelay = 1
-sellmode = "Default"
-local function getsellpacket()
-	local netMod = findModule("Networking")
-	local Networking = netMod and safeRequire(netMod)
-	if Networking then
-		local sellMethod = nil
-		for _, category in pairs(Networking) do
-			if typeof(category) == "table" then
-				for name, method in pairs(category) do
-					if typeof(name) == "string" and name:lower():find("sell") and typeof(method) == "table" and method.Serialize then
-						sellMethod = method
-						break
-					end
+
+
+--------------------------------
+---- Module API --------------------------------
+----------------------------------------------------------------
+
+
+-- Create a part binding for a GuiObject.
+function syde:BindFrame(frame, properties)
+	if binds[frame] then
+		return binds[frame].parts
+	end
+
+	local uid = GenUid()
+	local parts = {}
+	local f = Instance.new('Folder', root)
+	f.Name = frame.Name
+
+	local parents = {} -- construct hierarchy tree for rotation
+	do
+		local function add(child)
+			if child:IsA'GuiObject' then
+				parents[#parents + 1] = child
+				add(child.Parent)
+			end
+		end
+		add(frame)
+	end
+
+	local function UpdateOrientation(fetchProps)
+		if not frame or not frame.Parent then
+			return
+		end
+		local zIndex = 1 - 0.05*frame.ZIndex
+		-- the transparency inversion bug still surfaces when there's z-fighting
+		local tl, br = frame.AbsolutePosition, frame.AbsolutePosition + frame.AbsoluteSize
+		local tr, bl = Vector2.new(br.x, tl.y), Vector2.new(tl.x, br.y)
+		do
+			local rot = 0;
+			for _, v in ipairs(parents) do
+				rot = rot + v.Rotation
+			end
+			if rot ~= 0 and rot%180 ~= 0 then
+				local mid = tl:lerp(br, 0.5)
+				local s, c = math.sin(math.rad(rot)), math.cos(math.rad(rot))
+				local vec = tl
+				tl = Vector2.new(c*(tl.x - mid.x) - s*(tl.y - mid.y), s*(tl.x - mid.x) + c*(tl.y - mid.y)) + mid
+				tr = Vector2.new(c*(tr.x - mid.x) - s*(tr.y - mid.y), s*(tr.x - mid.x) + c*(tr.y - mid.y)) + mid
+				bl = Vector2.new(c*(bl.x - mid.x) - s*(bl.y - mid.y), s*(bl.x - mid.x) + c*(bl.y - mid.y)) + mid
+				br = Vector2.new(c*(br.x - mid.x) - s*(br.y - mid.y), s*(br.x - mid.x) + c*(br.y - mid.y)) + mid
+			end
+		end
+		DrawQuad(
+			camera:ScreenPointToRay(tl.x, tl.y, zIndex).Origin, 
+			camera:ScreenPointToRay(tr.x, tr.y, zIndex).Origin, 
+			camera:ScreenPointToRay(bl.x, bl.y, zIndex).Origin, 
+			camera:ScreenPointToRay(br.x, br.y, zIndex).Origin, 
+			parts
+		)
+		if fetchProps then
+			for _, pt in pairs(parts) do
+				pt.Parent = f
+			end
+			for propName, propValue in pairs(properties) do
+				for _, pt in pairs(parts) do
+					pt[propName] = propValue
 				end
 			end
-			if sellMethod then break end
-		end
-		if sellMethod then
-			local ok, paramsBuf = pcall(function() return sellMethod:Serialize() end)
-			if ok and paramsBuf then
-				local finalBuf = buffer.create(2 + buffer.len(paramsBuf))
-				buffer.writeu16(finalBuf, 0, sellMethod.Id)
-				buffer.copy(finalBuf, 2, paramsBuf, 0, buffer.len(paramsBuf))
-				return finalBuf
-			end
 		end
 	end
-	local sellId = sellev:GetAttribute("Sell")
-		or sellev:GetAttribute("SellFruits")
-		or sellev:GetAttribute("SellAll")
-		or sellev:GetAttribute("SellCrops")
-	if not sellId then
-		for attrName, val in pairs(sellev:GetAttributes()) do
-			if attrName:lower():find("sell") then
-				sellId = val
-				break
-			end
-		end
-	end
-	sellId = sellId or 175
-	local buf = buffer.create(3)
-	buffer.writeu16(buf, 0, sellId)
-	buffer.writeu8(buf, 2, 21)
-	return buf
+
+	UpdateOrientation(true)
+	RunService:BindToRenderStep(uid, 2000, UpdateOrientation)
+
+	binds[frame] = {
+		uid = uid;
+		parts = parts;
+		folder = f;
+	}
+	return binds[frame].parts
 end
-sellonpeak = false
-sellminprice = 0
-function getBackpackFruits()
-	local items = {}
-	local bp = localPlayer:FindFirstChild("Backpack")
-	if bp then
-		for _, child in bp:GetChildren() do
-			local fruitName = child:GetAttribute("FruitName") or child:GetAttribute("Fruit")
-			if fruitName or child:GetAttribute("HarvestedFruit") or child:GetAttribute("FruitProxy") then
-				table.insert(items, {
-					tool = child,
-					fruitName = fruitName or child.Name:gsub("%[.-%]", ""):match("^%s*(.-)%s*$"),
-					fruitId = child:GetAttribute("Id"),
-				})
-			end
-		end
-	end
-	local char = localPlayer.Character
-	if char then
-		for _, child in char:GetChildren() do
-			local fruitName = child:GetAttribute("FruitName") or child:GetAttribute("Fruit")
-			if fruitName or child:GetAttribute("HarvestedFruit") or child:GetAttribute("FruitProxy") then
-				table.insert(items, {
-					tool = child,
-					fruitName = fruitName or child.Name:gsub("%[.-%]", ""):match("^%s*(.-)%s*$"),
-					fruitId = child:GetAttribute("Id"),
-				})
-			end
-		end
-	end
-	return items
-end
-usedailydeal = false
-function dosell()
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	if usedailydeal then
-		local deal = Networking.NPCS.CheckDailyDeal:Fire()
-		if deal and deal.Available then
-			pcall(function() Networking.NPCS.UseDailyDealAll:Fire() end)
-		end
-	end
-	if sellonpeak then
-		local items = getBackpackFruits()
-		for _, item in items do
-			local tool = item.tool
-			if item.fruitId and tool then
-				local fruitName = item.fruitName
-				local mutation = tool:GetAttribute("Mutation") or "None"
-				local sizeMulti = tonumber(tool:GetAttribute("Weight")) or tonumber(tool:GetAttribute("SizeMultiplier")) or 1
-				local price = calcGamePrice(fruitName, sizeMulti, mutation, tonumber(tool:GetAttribute("DecayAlpha")) or 0)
-				if price >= sellminprice then
-					pcall(function() Networking.NPCS.SellFruit:Fire(item.fruitId) end)
-				end
+
+-- Applies the `properties` table to bound parts.
+function syde:Modify(frame, properties)
+	local parts = syde:GetBoundParts(frame)
+	if parts then
+		for propName, propValue in pairs(properties) do
+			for _, pt in pairs(parts) do
+				pt[propName] = propValue
 			end
 		end
 	else
-		local pk = getsellpacket()
-		if pk then
-			pcall(function() sellev:FireServer(pk) end)
-		end
+		warn(('No part bindings exist for %s'):format(frame:GetFullName()))
 	end
 end
-function isinvfull()
-	local current = #getInventoryItems()
-	local capacity = localPlayer:GetAttribute("MaxFruitCapacity") or 100
-	return current >= tonumber(capacity)
-end
-hub:CreateModule("Main", {
-	name = "Auto Sell",
-	on = false,
-	bind = "None",
-	desc = "Auto sell crops.",
-	callback = function(enabled)
-		sellrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while sellrunning do
-					if sellmode ~= "Max Inventory" or isinvfull() then
-						pcall(dosell)
-					end
-					task.wait(selldelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "dropdown", label = "Mode", value = "Default", list = {"Default", "Max Inventory"}, callback = function(value)
-			sellmode = value
-		end},
-		{type = "checkbox", label = "Use Daily Deal", value = false, callback = function(value)
-			usedailydeal = value
-		end},
-		{type = "checkbox", label = "Sell on Min Price", value = false, callback = function(value)
-			sellonpeak = value
-		end},
-		{type = "textbox", label = "Min Price (coins)", value = "0", placeholder = "e.g. 50000", callback = function(value)
-			sellminprice = tonumber(value) or 0
-		end},
-		{type = "slider", label = "Sell Delay", value = 1, min = 1, max = 60, suffix = "s", callback = function(value)
-			selldelay = value
-		end},
-		{type = "button", label = "Sell Now", callback = function()
-			dosell()
-		end},
-	}
-})
-doubleornothingrunning = false
-doubleornothingtarget = 2
-doubleornothingdelay = 1
-doubleornothingmaxinv = false
-doubleornothingactive = false
 
-function dodoubleornothing()
-	if doubleornothingactive then return end
-	doubleornothingactive = true
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	if doubleornothingmaxinv and not isinvfull() then
-		doubleornothingactive = false
+-- Removes the part binding from a gui object if one exists.
+function syde:UnbindFrame(frame)
+	local cb = binds[frame]
+	if cb then
+		RunService:UnbindFromRenderStep(cb.uid)
+		for _, v in pairs(cb.parts) do
+			v:Destroy()
+		end
+		if cb.folder and cb.folder.Parent then
+			cb.folder:Destroy()
+		end
+		binds[frame] = nil
+	else
+		warn(('No part bindings exist for %s'):format(frame:GetFullName()))
+	end
+end
+
+-- Returns true if a part binding exists for the gui object.
+function syde:HasBinding(frame)
+	return binds[frame] ~= nil
+end
+
+-- Returns an array using this.
+function syde:GetBoundParts(frame)
+	return binds[frame] and binds[frame].parts
+end
+
+
+
+function syde:GetDark(Color, val, mode)
+	if typeof(Color) ~= "Color3" or type(val) ~= "number" then
+		warn("[getdark] Invalid input: Expected (Color3, number)")
+		return Color
+	end
+
+	local H, S, V = Color:ToHSV()
+
+	val = math.clamp(val, 0.1, 10) 
+
+	if mode == "subtract" then
+		V = math.clamp(V - (val / 10), 0, 1)  
+	else
+		V = math.clamp(V / val, 0, 1)  
+	end
+
+	return Color3.fromHSV(H, S, V)
+end
+
+function syde:GetLighter(color: Color3, strength: number)
+	strength = math.clamp(strength or 0.2, 0, 1)
+
+	return Color3.new(
+		color.R + (1 - color.R) * strength,
+		color.G + (1 - color.G) * strength,
+		color.B + (1 - color.B) * strength
+	)
+end
+
+function syde:ColorPack(color)
+	assert(typeof(color) == "Color3", "PackColor expects a Color3 value.")
+
+	-- Convert to RGB integer values
+	return {
+		R = math.round(color.R * 255),
+		G = math.round(color.G * 255),
+		B = math.round(color.B * 255)
+	}
+end
+
+function syde:ColorUnpack(color)
+	assert(type(color) == "table" or type(color) == "string", "Invalid color format. Expected table (RGB) or string (HEX).")
+
+	if type(color) == "table" then
+
+		assert(color.R and color.G and color.B, "RGB table must contain 'R', 'G', and 'B' keys.")
+		return Color3.fromRGB(math.clamp(color.R, 0, 255), math.clamp(color.G, 0, 255), math.clamp(color.B, 0, 255))
+	elseif type(color) == "string" then
+
+		local hex = color:match("^#?(%x%x%x%x%x%x)$")
+		assert(hex, "Invalid HEX color format. Expected '#RRGGBB' or 'RRGGBB'.")
+		local r, g, b = tonumber(hex:sub(1, 2), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(5, 6), 16)
+		return Color3.fromRGB(r, g, b)
+	end
+end
+
+function syde:HidePH(instance, placeholder, recursive)
+	if typeof(instance) ~= "Instance" or type(placeholder) ~= "string" then
+		warn("[removeplaceholder] Invalid input: Expected (Instance, string)")
 		return
 	end
-	local items = getInventoryItems()
-	if #items == 0 then
-		doubleornothingactive = false
+
+	local target = instance:FindFirstChild(placeholder)
+
+	if not target then
+		warn(("[removeplaceholder] Placeholder '%s' not found in instance '%s'"):format(placeholder, instance.Name))
 		return
 	end
-	local roll = nil
-	pcall(function() roll = Networking.NPCS.DoubleOrNothing:Fire() end)
-	if roll and roll.Won then
-		local currentWins = roll.Wins or 1
-		hub:Notify("Double or Nothing Won! Wins: " .. currentWins)
-		while currentWins < doubleornothingtarget and doubleornothingrunning do
-			task.wait(doubleornothingdelay)
-			if not doubleornothingrunning then break end
-			local nextRoll = nil
-			pcall(function() nextRoll = Networking.NPCS.DoubleOrNothing:Fire() end)
-			if nextRoll and nextRoll.Won then
-				currentWins = nextRoll.Wins or (currentWins + 1)
-				hub:Notify("Double or Nothing Won! Wins: " .. currentWins)
-			else
-				hub:Notify("Double or Nothing Busted! Lost all crops.")
-				currentWins = 0
+
+	if target:IsA("GuiObject") then
+		target.Visible = false
+	else
+		warn(("[removeplaceholder] '%s' is not a GuiObject and cannot be hidden"):format(placeholder))
+		return
+	end
+
+	if recursive then
+		for _, child in ipairs(target:GetDescendants()) do
+			if child:IsA("GuiObject") then
+				child.Visible = false
+			end
+		end
+	end
+end
+
+function syde:AddConnection(Type, Callback)
+	if typeof(Type) ~= "RBXScriptSignal" then
+		error("[AddConnection] Invalid Type: Expected RBXScriptSignal, got " .. typeof(Type))
+	end
+	if typeof(Callback) ~= "function" then
+		error("[AddConnection] Invalid Callback: Expected function, got " .. typeof(Callback))
+	end
+
+	local Connection = Type:Connect(Callback)
+	trackRuntimeConnection(Connection)
+	local ConnectionData = { Connection = Connection }
+
+	syde.Connections = syde.Connections or {}
+	table.insert(syde.Connections, ConnectionData)
+
+	local function Disconnect()
+		if Connection.Connected then
+			Connection:Disconnect()
+		end
+
+		for i = #syde.Connections, 1, -1 do
+			if syde.Connections[i] == ConnectionData then
+				table.remove(syde.Connections, i)
 				break
 			end
 		end
-		if currentWins > 0 then
-			pcall(function() Networking.NPCS.CashOutDoubleOrNothing:Fire() end)
-			hub:Notify("Successfully cashed out Double or Nothing!")
-		end
 	end
-	doubleornothingactive = false
-end
 
-hub:CreateModule("Main", {
-	name = "Auto Double or Nothing",
-	on = false,
-	bind = "None",
-	desc = "Auto Double or Nothing.",
-	callback = function(enabled)
-		doubleornothingrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while doubleornothingrunning do
-					pcall(dodoubleornothing)
-					task.wait(1)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Target Streak Wins", value = 2, min = 1, max = 5, suffix = " wins", callback = function(value)
-			doubleornothingtarget = value
-		end},
-		{type = "checkbox", label = "Max Inventory Only", value = false, callback = function(value)
-			doubleornothingmaxinv = value
-		end},
-		{type = "slider", label = "Roll Delay", value = 1, min = 1, max = 15, suffix = "s", callback = function(value)
-			doubleornothingdelay = value
-		end},
-	}
-})
-
-shovelaurarunning = false
-shovelaurarange = 15
-shovelauradelay = 0.5
-shovelauraonlyplot = true
-shovelauraswing = true
-shovelauraactive = false
-
-function findShovel()
-	local bp = localPlayer:FindFirstChild("Backpack")
-	local char = localPlayer.Character
-	if char then
-		for _, child in char:GetChildren() do
-			if child:IsA("Tool") and child.Name:lower():find("shovel") then
-				return child
-			end
-		end
-	end
-	if bp then
-		for _, child in bp:GetChildren() do
-			if child:IsA("Tool") and child.Name:lower():find("shovel") then
-				return child
-			end
-		end
-	end
-	return nil
-end
-
-function doshovelaura()
-	if shovelauraactive then return end
-	shovelauraactive = true
-	local char = localPlayer.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum then
-		shovelauraactive = false
-		return
-	end
-	local shovel = findShovel()
-	if not shovel then
-		shovelauraactive = false
-		return
-	end
-	local farm = getPlayerFarm()
-	local farmCenter = farm and (farm:FindFirstChild("PlotSizeReference") or farm:FindFirstChild("SpawnPoint") or farm:FindFirstChildWhichIsA("BasePart", true))
-	local targets = {}
-	for _, player in game.Players:GetPlayers() do
-		if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local targetHrp = player.Character.HumanoidRootPart
-			local dist = (targetHrp.Position - hrp.Position).Magnitude
-			if dist <= shovelaurarange then
-				local allowed = true
-				if shovelauraonlyplot then
-					if farmCenter then
-						local distToPlot = (targetHrp.Position - farmCenter.Position).Magnitude
-						if distToPlot > 120 then
-							allowed = false
-						end
-					else
-						allowed = false
-					end
-				end
-				if allowed then
-					table.insert(targets, player)
-				end
-			end
-		end
-	end
-	if #targets > 0 then
-		local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-		if shovel.Parent ~= char then
-			hum:EquipTool(shovel)
-			task.wait(0.15)
-		end
-		for _, target in targets do
-			if not shovelaurarunning then break end
-			if shovelauraswing then
-				pcall(function() Networking.Shovel.SwingShovel:Fire(shovel) end)
-			end
-			pcall(function() Networking.Shovel.HitPlayer:Fire(target.UserId) end)
-		end
-	end
-	shovelauraactive = false
-end
-
-hub:CreateModule("Main", {
-	name = "Shovel Aura",
-	on = false,
-	bind = "None",
-	desc = "Shovel aura on nearby players.",
-	callback = function(enabled)
-		shovelaurarunning = enabled
-		if enabled then
-			task.spawn(function()
-				while shovelaurarunning do
-					pcall(doshovelaura)
-					task.wait(shovelauradelay)
-				end
-				local char = localPlayer.Character
-				local hum = char and char:FindFirstChildOfClass("Humanoid")
-				local bp = localPlayer:FindFirstChild("Backpack")
-				if hum and bp then
-					local shovel = char and char:FindFirstChild(function(c) return c:IsA("Tool") and c.Name:lower():find("shovel") end)
-					if shovel then
-						shovel.Parent = bp
-					end
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Aura Range", value = 15, min = 5, max = 30, suffix = " studs", callback = function(value)
-			shovelaurarange = value
-		end},
-		{type = "slider", label = "Attack Speed Delay", value = 5, min = 1, max = 20, suffix = "ds", callback = function(value)
-			shovelauradelay = value / 10
-		end},
-		{type = "checkbox", label = "Only on My Plot", value = true, callback = function(value)
-			shovelauraonlyplot = value
-		end},
-		{type = "checkbox", label = "Visual Swing Effect", value = true, callback = function(value)
-			shovelauraswing = value
-		end},
-	}
-})
-
-baseprotectorrunning = false
-baseprotectoractive = false
-baseprotectorconn = nil
-
-function protectBase(thief)
-	if not baseprotectorrunning or baseprotectoractive then return end
-	if not thief or not thief:IsA("Player") or thief == localPlayer then return end
-	local char = localPlayer.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum then return end
-	local thiefChar = thief.Character
-	local thiefHrp = thiefChar and thiefChar:FindFirstChild("HumanoidRootPart")
-	if not thiefHrp then return end
-	local farm = getPlayerFarm()
-	if not farm then return end
-	local farmCenter = farm:FindFirstChild("PlotSizeReference") or farm:FindFirstChild("SpawnPoint") or farm:FindFirstChildWhichIsA("BasePart", true)
-	if not farmCenter then return end
-	local distToFarm = (thiefHrp.Position - farmCenter.Position).Magnitude
-	if distToFarm > 100 then return end
-	local shovel = findShovel()
-	if not shovel then return end
-	baseprotectoractive = true
-	hub:Notify("Base Protector: Detecting thief " .. thief.DisplayName .. "! Neutralizing...")
 	task.spawn(function()
-		local startCF = hrp.CFrame
-		local targetCF = thiefHrp.CFrame + Vector3.new(0, 1.5, 0)
-		local needsUnequip = false
-		if shovel.Parent ~= char then
-			hum:EquipTool(shovel)
-			needsUnequip = true
-			task.wait(0.1)
+		task.wait(10)
+		for i = #syde.Connections, 1, -1 do
+			if not syde.Connections[i].Connection.Connected then
+				table.remove(syde.Connections, i)
+			end
 		end
-		hrp.CFrame = targetCF
-		hrp.Velocity = Vector3.zero
-		task.wait(0.08)
-		local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-		pcall(function() Networking.Shovel.SwingShovel:Fire(shovel) end)
-		pcall(function() Networking.Shovel.HitPlayer:Fire(thief.UserId) end)
-		task.wait(0.05)
-		hrp.CFrame = startCF
-		hrp.Velocity = Vector3.zero
-		if needsUnequip and shovel.Parent == char then
-			shovel.Parent = localPlayer:FindFirstChild("Backpack")
+	end)
+
+	return Connection, Disconnect
+end
+
+--@@Bento
+
+local Bento = {}
+Bento.__index = Bento
+
+-- create layout
+function Bento.new(container, config)
+	local self = setmetatable({}, Bento)
+
+	self.Container = container
+	self.Items = {}
+
+	self.Rows = {} -- NEW (optional manual rows)
+
+	self.Gap = config.Gap or 8
+	self.RightPadding = config.RightPadding or 16
+	self.TweenTime = config.TweenTime or 0.3
+
+	self.OriginalContainerSize = container.Size
+
+	self.Original = {}
+	self.ActiveTweens = {}
+
+	return self
+end
+
+-- NEW (optional)
+function Bento:NewRow()
+	local row = {}
+	table.insert(self.Rows,row)
+	return row
+end
+
+
+-- register frame
+function Bento:AddItem(frame, options, row)
+
+	frame.AnchorPoint = Vector2.new(0,0)
+
+	local item = {
+		Frame = frame,
+		Bottom = options and options.Bottom,
+		Row = row -- NEW
+	}
+
+	self.Original[frame] = {
+		Position = frame.Position,
+		Size = frame.Size
+	}
+
+	table.insert(self.Items,item)
+
+	if row then
+		table.insert(row,item)
+	end
+
+end
+
+-- tween helper
+function Bento:Tween(frame, goal)
+
+	if self.ActiveTweens[frame] then
+		self.ActiveTweens[frame]:Cancel()
+	end
+
+	local tween = tweenservice:Create(
+		frame,
+		TweenInfo.new(
+			self.TweenTime,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		goal
+	)
+
+	self.ActiveTweens[frame] = tween
+	tween:Play()
+
+	tween.Completed:Connect(function()
+		if self.ActiveTweens[frame] == tween then
+			self.ActiveTweens[frame] = nil
 		end
-		task.wait(1.0)
-		baseprotectoractive = false
+	end)
+
+end
+
+-- calculate layout
+function Bento:Update()
+
+	local containerWidth = guiAbsSize(self.Container).X
+
+	local normalItems = {}
+	local bottomItems = {}
+
+	for _,item in ipairs(self.Items) do
+		if item.Bottom then
+			table.insert(bottomItems,item)
+		else
+			table.insert(normalItems,item)
+		end
+	end
+
+
+	---------------------------------
+	-- rows
+	---------------------------------
+
+	local sortedRows = {}
+
+	-- if manual rows exist, use them
+	if #self.Rows > 0 then
+
+		for _,row in ipairs(self.Rows) do
+			table.insert(sortedRows,{
+				Items = row
+			})
+		end
+
+	else
+		-- fallback to original Y-based grouping
+
+		local rows = {}
+
+		for _,item in ipairs(normalItems) do
+
+			local original = self.Original[item.Frame]
+			local y = original.Position.Y.Offset
+
+			rows[y] = rows[y] or {}
+			table.insert(rows[y],item)
+
+		end
+
+		for y,row in pairs(rows) do
+
+			table.insert(sortedRows,{
+				Y = y,
+				Items = row
+			})
+
+		end
+
+		table.sort(sortedRows,function(a,b)
+			return a.Y < b.Y
+		end)
+
+	end
+
+
+
+	---------------------------------
+	-- detect stack mode
+	---------------------------------
+
+	local widestRow = 0
+
+	for _,row in ipairs(sortedRows) do
+
+		local width = 0
+
+		for _,item in ipairs(row.Items) do
+			width += self.Original[item.Frame].Size.X.Offset
+		end
+
+		width += (#row.Items-1) * self.Gap
+
+		if width > widestRow then
+			widestRow = width
+		end
+
+	end
+
+
+	local stacked = widestRow > containerWidth
+
+
+
+	---------------------------------
+	-- STACK MODE
+	---------------------------------
+
+	if stacked then
+
+		local y = 0
+
+		local function stackItem(item)
+
+			local frame = item.Frame
+			local original = self.Original[frame]
+
+			self:Tween(frame,{
+				Position = UDim2.fromOffset(0,y),
+				Size = UDim2.fromOffset(
+					containerWidth - self.RightPadding,
+					original.Size.Y.Offset
+				)
+			})
+
+			y += original.Size.Y.Offset + self.Gap
+
+		end
+
+
+		for _,row in ipairs(sortedRows) do
+			for _,item in ipairs(row.Items) do
+				if not item.Bottom then -- FIX
+					stackItem(item)
+				end
+			end
+		end
+
+		for _,item in ipairs(bottomItems) do
+			stackItem(item)
+		end
+
+
+		self.Container.Size = UDim2.new(
+			self.OriginalContainerSize.X.Scale,
+			self.OriginalContainerSize.X.Offset,
+			0,
+			y - self.Gap
+		)
+
+		return
+	end
+
+
+
+	---------------------------------
+	-- NORMAL MODE
+	---------------------------------
+
+	for _,row in ipairs(sortedRows) do
+
+		table.sort(row.Items,function(a,b)
+
+			local ax = self.Original[a.Frame].Position.X.Offset
+			local bx = self.Original[b.Frame].Position.X.Offset
+
+			return ax < bx
+
+		end)
+
+
+
+		for i,item in ipairs(row.Items) do
+
+			local frame = item.Frame
+			local original = self.Original[frame]
+
+			local currentX = original.Position.X.Offset
+			local height = original.Size.Y.Offset
+
+			local nextItem = row.Items[i+1]
+
+			local width
+
+			if nextItem then
+
+				local nextX =
+					self.Original[nextItem.Frame].Position.X.Offset
+
+				width =
+					nextX
+				- currentX
+				- self.Gap
+
+			else
+
+				width =
+					containerWidth
+				- currentX
+				- self.RightPadding
+
+			end
+
+
+			self:Tween(frame,{
+				Position = original.Position,
+				Size = UDim2.fromOffset(width,height)
+			})
+
+		end
+
+	end
+
+
+
+	-- bottom items stay at original positions
+	for _,item in ipairs(bottomItems) do
+
+		local frame = item.Frame
+		local original = self.Original[frame]
+
+		local width =
+			containerWidth
+		- original.Position.X.Offset
+		- self.RightPadding
+
+		self:Tween(frame,{
+			Position = original.Position,
+			Size = UDim2.fromOffset(width,original.Size.Y.Offset)
+		})
+
+	end
+
+
+
+	self.Container.Size = self.OriginalContainerSize
+
+end
+
+function Bento:Bind()
+
+	local busy = false
+
+	safeOnPropertyChanged(self.Container, "AbsoluteSize", function()
+		if busy then return end
+		busy = true
+
+		task.defer(function()
+			pcall(function()
+				self:Update()
+			end)
+			busy = false
+		end)
+	end)
+
+end
+
+function syde:MakeResizable(Dragger, Object, MinSize, Callback, LockAspectRatio)
+	assert(typeof(Dragger) == "Instance" and Dragger:IsA("GuiObject"), "[MakeResizable] Dragger must be a GuiObject")
+	assert(typeof(Object) == "Instance" and Object:IsA("GuiObject"), "[MakeResizable] Object must be a GuiObject")
+	assert(typeof(MinSize) == "Vector2", "[MakeResizable] MinSize must be a Vector2")
+	assert(Callback == nil or typeof(Callback) == "function", "[MakeResizable] Callback must be a function or nil")
+
+	local userInput = game:GetService("UserInputService")
+
+	local startPosition, startSize = nil, nil
+	local isResizing = false
+
+	-- helper for both mouse and touch
+	local function getInputPos(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			return Vector2.new(input.Position.X, input.Position.Y)
+		else
+			return userInput:GetMouseLocation()
+		end
+	end
+
+	local function onInputBegan(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isResizing = true
+			resizing = true
+			startPosition = getInputPos(input)
+			startSize = Object.AbsoluteSize
+			tweenservice:Create(Library.main.resize, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 15,0, 15)}):Play()
+			tweenservice:Create(Library.main.resize, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+		end
+	end
+
+	local function onInputChanged(input)
+		if isResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local mouse = getInputPos(input)
+			if startPosition and mouse then
+				local delta = mouse - startPosition
+
+				local newWidth = math.max(MinSize.X, startSize.X + delta.X)
+				local newHeight = math.max(MinSize.Y, startSize.Y + delta.Y)
+
+				if LockAspectRatio then
+					local aspectRatio = startSize.X / startSize.Y
+					newHeight = newWidth / aspectRatio
+				end
+
+				Object:TweenSize(
+					UDim2.fromOffset(newWidth, newHeight),
+					Enum.EasingDirection.Out,
+					Enum.EasingStyle.Quint,
+					0.4,
+					true
+				)
+
+				if Callback then
+					Callback(Vector2.new(newWidth, newHeight))
+				end
+			end
+		end
+	end
+
+	local function onInputEnded(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isResizing = false
+			resizing = false
+			startPosition, startSize = nil, nil
+			tweenservice:Create(Library.main.resize, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 20,0, 20)}):Play()
+			tweenservice:Create(Library.main.resize, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {ImageColor3 = Color3.fromRGB(53, 53, 53)}):Play()
+		end
+	end
+
+	syde:AddConnection(Dragger.InputBegan, onInputBegan)
+	syde:AddConnection(userInput.InputChanged, onInputChanged)
+	syde:AddConnection(Dragger.InputEnded, onInputEnded)
+end
+
+
+local loadTweens = {}
+
+function syde:registerLoadTween(object, properties, initialState, tweenInfo)
+	assert(typeof(object) == "Instance", "[registerLoadTween] Object must be an Instance")
+	assert(typeof(properties) == "table", "[registerLoadTween] Properties must be a table")
+	assert(typeof(initialState) == "table", "[registerLoadTween] Initial state must be a table")
+	assert(typeof(tweenInfo) == "TweenInfo", "[registerLoadTween] TweenInfo must be of type TweenInfo")
+
+	loadTweens[object] = {
+		tween = tweenservice:Create(object, tweenInfo, properties),
+		properties = properties,
+		initialState = initialState,
+		tweenInfo = tweenInfo
+	}
+end
+
+function syde:resetToInitialState(animated, resetTweenInfo)
+	for object, tweenData in pairs(loadTweens) do
+		if object and object.Parent then
+			tweenData.tween:Cancel()
+
+			if animated then
+				local resetTween = tweenservice:Create(object, resetTweenInfo or TweenInfo.new(0.3), tweenData.initialState)
+				resetTween:Play()
+				resetTween.Completed:Wait()
+			else
+
+				for property, value in pairs(tweenData.initialState) do
+					object[property] = value
+				end
+			end
+		end
+	end
+end
+
+function syde:replayLoadTweens(targetObject)
+	syde:resetToInitialState(false)
+
+	for object, tweenData in pairs(loadTweens) do
+		if object and object.Parent then
+			if not targetObject or object == targetObject then
+				tweenData.tween:Cancel()
+				tweenData.tween:Play()
+			end
+		end
+	end
+end
+
+function syde:removeLoadTween(object)
+	if loadTweens[object] then
+		loadTweens[object].tween:Cancel()
+		loadTweens[object] = nil
+	end
+end
+
+local RunService = game:GetService("RunService")
+
+function syde:WiggleText(label)
+	if not label or not label:IsA("TextLabel") then return end
+	if not label.Text or label.Text == "" then return end
+
+	-- Remove old animation
+	if label:FindFirstChild("WiggleContainer") then
+		label.WiggleContainer:Destroy()
+	end
+
+	local container = Instance.new("Folder")
+	container.Name = "WiggleContainer"
+	container.Parent = label
+
+	-- Hide original label text
+	label.TextTransparency = 1
+
+	local baseText = label.Text:gsub("<.->", "") -- remove RichText tags
+	local fontFace = label.FontFace
+	local baseSize = label.TextSize
+	local textColor = label.TextColor3
+
+	local chars = {}
+	local xOffset = 0
+
+	-- Create a label for each character
+	for i = 1, #baseText do
+		local char = baseText:sub(i, i)
+		local charLabel = Instance.new("TextLabel")
+		charLabel.BackgroundTransparency = 1
+		charLabel.Text = char
+		charLabel.TextColor3 = textColor
+		charLabel.TextSize = baseSize
+		charLabel.FontFace = fontFace
+		charLabel.TextXAlignment = Enum.TextXAlignment.Left
+		charLabel.TextYAlignment = Enum.TextYAlignment.Center
+		charLabel.AnchorPoint = Vector2.new(0, 0.5)
+		charLabel.Position = UDim2.new(0, xOffset, 0.5, 0)
+		charLabel.Parent = container
+		charLabel.ZIndex = 99
+
+		xOffset += charLabel.TextBounds.X
+		table.insert(chars, charLabel)
+	end
+
+	-- Animate characters
+	local t = 0
+	local id = "Wiggle_" .. tostring(math.random(1, 999999))
+	RunService:BindToRenderStep(id, Enum.RenderPriority.First.Value, function(dt)
+		t += dt * 6
+		for i, charLabel in ipairs(chars) do
+			local offset = math.sin(t + i * 0.3) * 3 -- wiggle amplitude
+			charLabel.Position = UDim2.new(0, charLabel.Position.X.Offset, 0.5, offset)
+		end
+	end)
+
+	label.Destroying:Connect(function()
+		RunService:UnbindFromRenderStep(id)
 	end)
 end
 
-function toggleBaseProtector(val)
-	baseprotectorrunning = val
-	if baseprotectorconn then
-		baseprotectorconn:Disconnect()
-		baseprotectorconn = nil
-	end
-	if val then
-		local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-		baseprotectorconn = Networking.Steal.StealStarted.OnClientEvent:Connect(protectBase)
+
+function syde:StopWiggle(label)
+	for i, data in ipairs(self.Connections) do
+		if data.label == label then
+			data.conn:Disconnect()
+			table.remove(self.Connections, i)
+			break
+		end
 	end
 end
 
-hub:CreateModule("Main", {
-	name = "Base Protector",
-	on = false,
-	bind = "None",
-	desc = "Auto hit thieves.",
-	callback = function(enabled)
-		toggleBaseProtector(enabled)
-	end,
-	opts = {}
-})
 
-autowaterrunning = false
-autowaterdelay = 5
-autowateractive = false
-autowaterfiltertype = "Whitelist"
-autowaterfilterlist = "None"
-autowaternoduplicates = true
-autowaterskipmature = false
-autowaterskipallfruitsgrown = false
-autowaterskipboost = false
-autowatercanselect = "Auto (Any)"
 
-local wateringCanNameListCache = nil
-local wateringCanPriority = {
-	["Super Syrup Watering Can"] = 1,
-	["Super Watering Can"] = 2,
-	["Syrup Watering Can"] = 3,
-	["Common Watering Can"] = 4,
-}
+function syde:updateLayout(container, spacing)
+	spacing = spacing or 5
+	local ok, err = pcall(function()
+	local yOffset = 0
+	local containerWidth = guiAbsSize(container).X 
 
-local function getWateringCanNameList()
-	if wateringCanNameListCache then
-		return wateringCanNameListCache
+	for _, v in ipairs(container:GetChildren()) do
+		if v:IsA('UIListLayout') then
+			v:Destroy()
+		end
 	end
-	local names = {}
-	local mod = findModule("WateringcanData")
-	local data = mod and safeRequire(mod)
-	if data then
-		for _, entry in ipairs(data) do
-			if entry.Name then
-				table.insert(names, entry.Name)
+
+	if resizing == false then
+		for _, child in ipairs(container:GetChildren()) do
+			if (child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("TextLabel") or child:IsA("TextButton")) and child.Visible then
+				tweenservice:Create(child, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
+				yOffset = yOffset + math.max(guiAbsSize(child).Y, child.Size.Y.Offset) + spacing
 			end
 		end
 	end
-	if #names == 0 then
-		names = {
-			"Common Watering Can",
-			"Super Watering Can",
-			"Syrup Watering Can",
-			"Super Syrup Watering Can",
-		}
+
+	if container:IsA("ScrollingFrame") then
+		container.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 	end
-	wateringCanNameListCache = names
-	return names
+	end)
+	if not ok then
+		return
+	end
 end
 
-local function getWateringCanSelectList()
-	local list = { "Auto (Any)", "Best Available" }
-	for _, name in ipairs(getWateringCanNameList()) do
-		table.insert(list, name)
+local dragSpeed = 0.6
+local LockToScreen = false
+
+function syde:AddDrag(Object, Main, ConstrainToParent)
+	assert(typeof(Object) == "Instance" and Object:IsA("GuiObject"), "[AddDrag] Object must be a GuiObject")
+	assert(typeof(Main) == "Instance" and Main:IsA("GuiObject"), "[AddDrag] Main must be a GuiObject")
+
+	local userInput = game:GetService("UserInputService")
+	local tweenService = game:GetService("TweenService")
+
+	local dragging, dragInput, startMousePos, startFramePos = false, nil, nil, nil
+
+	local function getConstrainedPosition(newPos)
+		if not LockToScreen then
+			return newPos
+		end
+
+		local screenSize = workspace.CurrentCamera.ViewportSize
+		local frameSize = Main.AbsoluteSize
+		local anchorPoint = Main.AnchorPoint
+
+		-- Calculate the absolute position based on newPos
+		local absX = newPos.X.Offset
+		local absY = newPos.Y.Offset
+
+		local minX = 0 + (frameSize.X * anchorPoint.X)
+		local maxX = screenSize.X - (frameSize.X * (1 - anchorPoint.X))
+
+		local minY = 0 + (frameSize.Y * anchorPoint.Y)
+		local maxY = screenSize.Y - (frameSize.Y * (1 - anchorPoint.Y))
+
+		local clampedX = math.clamp(absX, minX, maxX)
+		local clampedY = math.clamp(absY, minY, maxY)
+
+		return UDim2.new(0, clampedX, 0, clampedY)
 	end
+
+	local function getInputPos(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			return Vector2.new(input.Position.X, input.Position.Y)
+		else
+			return userInput:GetMouseLocation()
+		end
+	end
+
+
+
+
+	syde:AddConnection(Object.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			startMousePos = getInputPos(input)
+
+			local screenSize = workspace.CurrentCamera.ViewportSize
+			local absX = screenSize.X * Main.Position.X.Scale + Main.Position.X.Offset
+			local absY = screenSize.Y * Main.Position.Y.Scale + Main.Position.Y.Offset
+
+			Main.Position = UDim2.new(0, absX, 0, absY)
+			startFramePos = Main.Position
+		end
+	end)
+
+
+	syde:AddConnection(userInput.InputChanged, function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local currentMousePos = getInputPos(input)
+			if currentMousePos and startMousePos then
+				local delta = currentMousePos - startMousePos
+
+				local newPos = UDim2.new(
+					startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
+					startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
+				)
+
+				Main:TweenPosition(getConstrainedPosition(newPos), Enum.EasingDirection.Out, Enum.EasingStyle.Quint, dragSpeed, true)
+			end
+		end
+	end)
+
+	-- listen globally so a fast drag that leaves the handle still releases
+	syde:AddConnection(userInput.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+function syde:HidePlaceHolder(instance, placeholder, recursive)
+	if typeof(instance) ~= "Instance" or type(placeholder) ~= "string" then
+		warn("[removeplaceholder] Invalid input: Expected (Instance, string)")
+		return
+	end
+
+	local target = instance:FindFirstChild(placeholder)
+
+	if not target then
+		warn(("[removeplaceholder] Placeholder '%s' not found in instance '%s'"):format(placeholder, instance.Name))
+		return
+	end
+
+	if target:IsA("GuiObject") then
+		target.Visible = false
+	else
+		warn(("[removeplaceholder] '%s' is not a GuiObject and cannot be hidden"):format(placeholder))
+		return
+	end
+
+	if recursive then
+		for _, child in ipairs(target:GetDescendants()) do
+			if child:IsA("GuiObject") then
+				child.Visible = false
+			end
+		end
+	end
+end
+
+local rs
+local ss
+local mh = true
+
+
+--@Loader
+do
+
+	function syde:Load(Config)
+		disconnectRuntimeConnections()
+		task.wait(0.4)
+		local LOADER = Loader
+		LOADER.Enabled = true
+		LOADER.Parent = coregui
+
+		-- PreLoad
+		Config.Name = Config.Name or 'Syde™'
+		Config.Logo = Config.Logo or 'rbxassetid://14554547135'
+		Config.ConfigFolder = Config.ConfigFolder or 'syde'
+		Config.Status = Config.Status or false
+		Config.Accent = Config.Accent or syde.theme.Accent
+		Config.HitBox = Config.HitBox or syde.theme.HitBox
+
+		LOADER.loader.profile.Title.TextTransparency = 1
+		LOADER.loader.profile.ImageTransparency = 1
+		LOADER.loader.profile.Title.Text = Config.Name
+		--	LOADER.load.logo.stroke.UIStroke.Transparency = 1
+
+		local LoaderConfig = {
+			Name = Config.Name;
+			Logo = 'rbxassetid://'..Config.Logo;
+			ConfigFolder = Config.ConfigFolder;
+			Status = Config.Status;
+			Accent = Config.Accent or syde.theme.Accent;
+			Hitbox = Config.HitBox or syde.theme.HitBox;
+			Socials = {}
+		}
+
+		if LoaderConfig.Status == false then
+			--	LOADER.load.logo.stroke.UIStroke.Color = Color3.fromRGB(24, 24, 24)
+			LOADER.loader.profile.Title.Text = LoaderConfig.Name
+		end
+
+		local statusColors = {
+			Stable = { Color = Color3.fromRGB(25, 229, 22), Text = '<font color="#24bf48">Stable</font>' },
+			Unstable = { Color = Color3.fromRGB(227, 229, 81), Text = '<font color="#e3e551">Unstable</font>' },
+			Detected = { Color = Color3.fromRGB(229, 44, 47), Text = '<font color="#e52c2f">Detected</font>' },
+			Patched = { Color = Color3.fromRGB(229, 229, 229), Text = '<font color="#e52c2f">Patched</font>' }
+		}
+
+		local statusData = statusColors[LoaderConfig.Status]
+		if statusData then
+			LOADER.loader.profile.status.BackgroundColor3 = statusData.Color
+			--	LOADER.load.logo["Title/Status"].Text = string.format('%s  <font color="#363636">•</font>  %s', LoaderConfig.Name, statusData.Text)
+		end
+
+		LOADER.loader.profile.Image = LoaderConfig.Logo;
+		LOADER.loader.ImageLabel.Image = LoaderConfig.Logo;
+		--	LOADER.load.info.build.Text = syde.Build
+
+		local ti = TweenInfo.new(0.5, Enum.EasingStyle.Exponential)
+
+		task.spawn(function()
+			while LOADER and LOADER.Parent do
+				task.wait()
+
+				local loaderFrame = LOADER:FindFirstChild("loader")
+				if not loaderFrame then break end
+
+				local dots = loaderFrame:FindFirstChild("dots")
+				if not dots then break end
+
+				local function resetDots()
+					for _, v in ipairs(dots:GetChildren()) do
+						if v:IsA("Frame") then
+							tweenservice:Create(v, ti, {BackgroundTransparency = 0.6}):Play()
+						end
+					end
+				end
+
+				-- 1
+
+				if dots:FindFirstChild("dot1") then
+					tweenservice:Create(dots.dot1, ti, {BackgroundTransparency = 0}):Play()
+				end
+				task.wait(0.5)
+				resetDots()
+
+
+				-- 2
+				if dots:FindFirstChild("dot3") then
+					tweenservice:Create(dots.dot3, ti, {BackgroundTransparency = 0}):Play()
+				end
+				task.wait(0.5)
+				resetDots()
+
+
+				-- 3
+				if dots:FindFirstChild("dot2") then
+					tweenservice:Create(dots.dot2, ti, {BackgroundTransparency = 0}):Play()
+				end
+				task.wait(0.5)
+				resetDots()
+
+			end
+		end)
+
+
+		local TweenWorkPos = 315
+		local TweenWorkAppear = 287
+		local TweenWorkDisappear = 270
+
+		local Styles = {
+			GitHub = {
+				BackGroundColor = Color3.fromRGB(39, 39, 39);
+				--	GradColor = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(129, 129, 129))};
+				StrokeColor = Color3.fromRGB(39, 39, 39);
+				Icon = 'rbxassetid://112129825794851'
+			},
+			Discord = {
+				BackGroundColor = Color3.fromRGB(88, 141, 255);
+				--	GradColor = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(91, 125, 147))};
+				StrokeColor = Color3.fromRGB(88, 141, 255);
+				Icon = 'rbxassetid://113723018301753'
+			},
+			Site = {
+				BackGroundColor = Color3.fromRGB(242, 83, 112);
+				--	GradColor = ColorSequence.new{ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1.00, Color3.fromRGB(181, 33, 255))};
+				StrokeColor = Color3.fromRGB(242, 83, 112);
+				Icon = 'rbxassetid://127485237503891'
+			}
+		}
+
+		local logo = LOADER.loader.profile
+		--	local sl = logo.sl
+		--	local strokeGradient = logo.stroke.UIStroke.UIGradient
+
+		local loadedsocial = false
+
+		local Socials = Config.Socials or {}
+		local maxSocials = 3
+		local count = 0
+
+
+		local SocialTemplate = LOADER.loader.profile.socials.s1
+
+		for platform, value in pairs(Socials) do
+			if count >= maxSocials then break end
+			if not Styles[platform] then continue end
+			if not SocialTemplate then break end
+
+			count += 1
+
+			local clone = SocialTemplate:Clone()
+			clone.Visible = true
+			clone.Name = platform .. "_Social"
+			clone.Parent = SocialTemplate.Parent
+
+			-- Positioning (stack horizontally)
+			--	clone.Position = UDim2.new(0, (count - 1) * 110, 1, -40)
+
+			-- Apply Style
+			clone.BackgroundColor3 = Styles[platform].BackGroundColor
+			clone.ImageLabel.Image = Styles[platform].Icon
+
+			if clone.Frame:FindFirstChild("UIStroke") then
+				clone.Frame.UIStroke.Color = Styles[platform].StrokeColor
+			end
+
+			-- Set Text (change if your text label has different name)
+			if clone:FindFirstChild("Title") then
+				clone.Title.Text = value
+			end
+
+			clone.interact.MouseButton1Click:Connect(function()
+				if value ~= '' then
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Color3.fromRGB(74, 255, 33)}):Play()
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0}):Play()
+					task.wait(0.5)
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Styles[platform].BackGroundColor}):Play()
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0.5}):Play()
+				else
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Color3.fromRGB(255, 41, 45)}):Play()
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0}):Play()
+					task.wait(0.5)
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Color = Styles[platform].BackGroundColor}):Play()
+					tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0.5}):Play()
+				end
+
+				setclipboard(value)
+			end)
+
+			clone.MouseEnter:Connect(function()
+				tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0.5}):Play()
+			end)
+			clone.MouseLeave:Connect(function()
+				tweenservice:Create(clone.Frame.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Transparency = 0}):Play()
+			end)
+
+			loadedsocial = true
+		end
+
+		tweenservice:Create(logo, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+		--	tweenservice:Create(logo, TweenInfo.new(1, Enum.EasingStyle.Quint), {Position = UDim2.new(0.5, 0,0, 105)}):Play()
+
+		tweenservice:Create(logo.Title, TweenInfo.new(2, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+		task.wait(0.4)
+
+
+		--	local function initLoader()
+		--	tweenservice:Create( LOADER.load.Salt, TweenInfo.new(0.65, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 25,0, 25)}):Play()
+		--	tweenservice:Create( LOADER.load.Salt, TweenInfo.new(0.65, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+		--	end
+
+		local function TweenWorkLabel(Finish, icon, Text)
+			LOADER.loader.work.Position = UDim2.new(0.5, 0,1, -40)
+			LOADER.loader.work.Text = Text
+			LOADER.loader.work.ImageLabel.Image = icon
+			tweenservice:Create( LOADER.loader.work, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+			tweenservice:Create( LOADER.loader.work.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+			tweenservice:Create( LOADER.loader.work, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Position = UDim2.new(0.5, 0,1, -73) }):Play()
+			--	tweenservice:Create(game.Workspace.Camera, TweenInfo.new(1, Enum.EasingStyle.Exponential), { FieldOfView  = game.Workspace.Camera.FieldOfView - 3 }):Play()
+			task.wait(Finish)
+			tweenservice:Create(LOADER.loader.work, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+			tweenservice:Create( LOADER.loader.work.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+			tweenservice:Create( LOADER.loader.work, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Position = UDim2.new(0.5, 0,1, -100) }):Play()
+			task.wait(0.35)
+
+			-- reset
+
+		end
+
+		local function load()
+			TweenWorkLabel(0.4,'rbxassetid://136002400178503', '')
+
+			if Config.ConfigurationSaving and Config.ConfigurationSaving.Enabled then
+				local folderName = Config.ConfigurationSaving.FolderName or "SydeSec"
+				local fileName = Config.ConfigurationSaving.FileName or "default_config"
+
+				syde.ConfigEnabled = true
+				syde.ConfigFolder = folderName
+				syde.ConfigFile = fileName
+
+				if isfolder and not isfolder(folderName) then
+					local success, err = pcall(function()
+						makefolder(folderName)
+					end)
+					if not success then
+						warn("[SYDE] Failed to create folder:", err)
+					end
+				end
+
+				-- Only preload the saved config if AutoLoad was explicitly enabled
+				local autoloadPath = string.format("%s/_autoload.txt", folderName)
+				local autoload = false
+				if isfile and isfile(autoloadPath) then
+					local ok, content = pcall(readfile, autoloadPath)
+					if ok and content then
+						autoload = tostring(content):match("^%s*(.-)%s*$") == "1"
+					end
+				end
+
+				if autoload then
+					local configPath = string.format("%s/%s.json", folderName, fileName)
+					if isfile and isfile(configPath) then
+						local ok, content = pcall(readfile, configPath)
+						if ok and content then
+							local decodeOk, decoded = pcall(function() return https:JSONDecode(content) end)
+							if decodeOk and type(decoded) == "table" then
+								syde.LoadedConfig = decoded
+							end
+						end
+					end
+				end
+			end
+
+
+			TweenWorkLabel(0.4,'rbxassetid://105810189969774', '')
+
+			local UI_TAG = "sydeUILoader"
+			local MARKER_NAME = "SYDEUIDetector"
+			local INTERNAL_UUID = ("SYDE-" .. tostring(game.JobId):gsub("-", "") .. tostring(tick())):gsub("%.", "")
+			local PROTECTION_EVENT = Instance.new("BindableEvent")
+			local HttpService = game:GetService("HttpService")
+
+			cleanupSydeUi(MARKER_NAME)
+
+			-- Load the Library
+			local successLibrary, Library = pcall(function()
+				return Library -- Replace with actual GetObjects if needed
+			end)
+
+			if not successLibrary or not Library then
+				syde:Report("Loading UI library", "Library/GetObjects returned nil - the UI asset failed to load")
+				return
+			end
+
+			Library.Name = UI_TAG
+			Library.ResetOnSpawn = false
+
+			local marker = Instance.new("StringValue")
+			marker.Name = MARKER_NAME
+			marker.Value = INTERNAL_UUID
+			marker.Parent = Library
+
+			pcall(function()
+				Library.Parent = coregui
+			end)
+
+			bindUiRefs()
+
+			-- Ensure Library stays in CoreGui
+			task.spawn(function()
+				while Library and Library.Parent do
+					task.wait(1)
+					if Library.Parent ~= coregui then
+						warn("Syde 〡 UI moved. Restoring...")
+						pcall(function()
+							Library.Parent = coregui
+						end)
+					end
+				end
+			end)
+
+			TweenWorkLabel(0.4,'rbxassetid://108012241529487', '')
+
+
+			if Config.AutoJoinDiscord and Config.AutoJoinDiscord.Enabled then
+				local discordConfig = Config.AutoJoinDiscord
+				local rootFolder = Config.ConfigurationSaving and Config.ConfigurationSaving.FolderName or "SydeSec"
+				local discordFolder = rootFolder .. "/DiscordInvites"
+				local inviteCode = discordConfig.Invite
+				local inviteFilePath = discordFolder .. "/" .. inviteCode .. ".txt"
+
+				-- Ensure folder exists
+				if isfolder and not isfolder(discordFolder) then
+					local folderSuccess, folderErr = pcall(function()
+						makefolder(discordFolder)
+					end)
+					if folderSuccess then
+					else
+						warn("[SYDE] Failed to create DiscordInvites folder:", folderErr)
+					end
+				end
+
+				local shouldPrompt = true
+				if isfile and discordConfig.RememberJoins and isfile(inviteFilePath) then
+					shouldPrompt = false
+				end
+
+				if shouldPrompt then
+					if request then
+						local reqSuccess, reqErr = pcall(function()
+							request({
+								Url = "http://127.0.0.1:6463/rpc?v=1",
+								Method = "POST",
+								Headers = {
+									["Content-Type"] = "application/json",
+									["Origin"] = "https://discord.com"
+								},
+								Body = https:JSONEncode({
+									cmd = "INVITE_BROWSER",
+									nonce = https:GenerateGUID(false),
+									args = {
+										code = inviteCode
+									}
+								})
+							})
+						end)
+
+						if reqSuccess then
+						else
+							warn("[SYDE] Failed to send Discord invite:", reqErr)
+						end
+					else
+						warn("[SYDE] Request function not available — cannot send Discord invite.")
+					end
+
+					if discordConfig.RememberJoins then
+						local writeSuccess, writeErr = pcall(function()
+							writefile(inviteFilePath, "Joined Discord via invite '" .. inviteCode .. "' at " .. os.date())
+						end)
+
+						if writeSuccess then
+						else
+							warn("[SYDE] Failed to write join log for invite:", writeErr)
+						end
+					end
+				end
+			end
+
+			TweenWorkLabel(0.4,'rbxassetid://136405833725573', '')
+			task.wait(0.4)
+			loaded = true
+			--	tweenservice:Create( LOADER.load.Salt, TweenInfo.new(0.65, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 146,0, 25)}):Play()
+			--	tweenservice:Create( LOADER.load.Salt.ImageLabel, TweenInfo.new(0.65, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+		end
+
+		--	initLoader()
+		task.wait(0.08)
+		load()
+
+		task.wait(0.6)
+
+		--	Library.Enabled = true
+		syde.theme.Accent = Config.Accent;
+		syde.theme.HitBox = Config.HitBox;
+		syde._LoadBranding = {
+			Name = Config.Name,
+			Logo = Config.Logo,
+		}
+		LOADER:Destroy()
+
+	end
+
+end
+
+local HttpService = https
+local CONFIG_VERSION = 1
+
+local SaveDebounce
+local SAVE_DELAY = 0.2
+
+local function SafeDecode(data)
+	local success, result = pcall(function()
+		return HttpService:JSONDecode(data)
+	end)
+	return success and result or nil
+end
+
+local function ApplyFlag(Flag, Value)
+	if Value == nil then return false end
+
+	-- ColorPicker Handling
+	if Flag.Type == "ColorPicker" then
+		local unpacked = syde:ColorUnpack(Value)
+
+		if Flag.Set then
+			Flag:Set(unpacked, true)
+		elseif Flag.Color then
+			Flag.Color = unpacked
+		end
+
+		return true
+	end
+
+	-- Standard Setter
+	if Flag.Set then
+		Flag:Set(Value, true)
+		return true
+	end
+
+	-- Raw Value fallback
+	if Flag.V ~= nil then
+		Flag.V = Value
+		return true
+	end
+
+	if Flag.StarterValue ~= nil then
+		Flag.StarterValue = Value
+		return true
+	end
+
+	warn("Syde 〡 Unsupported flag type for:", Flag)
+	return false
+end
+
+function LoadConfig(Configuration)
+	if type(Configuration) ~= "string" then
+		warn("Syde 〡 Invalid config format.")
+		return false, 0
+	end
+
+	local Decoded = SafeDecode(Configuration)
+	if not Decoded then
+		warn("Syde 〡 Failed to decode config.")
+		return false, 0
+	end
+
+	-- Cache so flags registered later can still apply their saved values
+	syde.LoadedConfig = Decoded
+
+	-- Version check (future ready)
+	if Decoded._version and Decoded._version ~= CONFIG_VERSION then
+		warn("Syde 〡 Config version mismatch.")
+	end
+
+	local applied = 0
+
+	-- Suppress per-element notifications fired by callbacks during the bulk apply
+	syde.SuppressNotify = true
+	for FlagName, Flag in pairs(syde.Flags) do
+		local SavedValue = Decoded[FlagName]
+
+		if SavedValue ~= nil then
+			-- Isolate each flag so a single bad one doesn't break the whole load
+			local ok, success = pcall(ApplyFlag, Flag, SavedValue)
+			if ok and success then
+				applied = applied + 1
+			elseif not ok then
+				warn("Syde 〡 Failed to apply flag '" .. tostring(FlagName) .. "':", success)
+			end
+		end
+	end
+	syde.SuppressNotify = false
+
+	return true, applied
+end
+
+-- Apply a cached saved value to a flag, if one exists
+function syde:ApplyCachedFlag(Flag)
+	if not Flag or not Flag.Flag then return end
+	if not self.LoadedConfig then return end
+	local saved = self.LoadedConfig[Flag.Flag]
+	if saved == nil then return end
+	ApplyFlag(Flag, saved)
+end
+
+-- Internal Save Logic
+local function PerformSave()
+	if not syde.ConfigEnabled then return end
+	if not writefile then return end
+
+	local Data = {
+		_version = CONFIG_VERSION
+	}
+
+	for FlagName, Flag in pairs(syde.Flags) do
+		if Flag.Type == "ColorPicker" then
+			if Flag.Color then
+				Data[FlagName] = syde:ColorPack(Flag.Color)
+			end
+		elseif Flag.V ~= nil then
+			Data[FlagName] = Flag.V
+		elseif Flag.Color then
+			Data[FlagName] = syde:ColorPack(Flag.Color)
+		elseif Flag.StarterValue ~= nil then
+			Data[FlagName] = Flag.StarterValue
+		end
+	end
+
+	-- Ensure folder exists
+	if makefolder and not isfolder(syde.ConfigFolder) then
+		makefolder(syde.ConfigFolder)
+	end
+
+	local path = string.format("%s/%s.json", syde.ConfigFolder, syde.ConfigFile)
+
+	local success, err = pcall(function()
+		writefile(path, HttpService:JSONEncode(Data))
+	end)
+
+	if not success then
+		warn("Syde 〡 Failed to save config:", err)
+	end
+end
+
+-- Public Save (Debounced)
+function SaveConfig()
+	if SaveDebounce then
+		task.cancel(SaveDebounce)
+	end
+
+	SaveDebounce = task.delay(SAVE_DELAY, PerformSave)
+end
+
+function syde:LoadSaveConfig(targetFile)
+	if not syde.ConfigEnabled then
+		if syde.Toast then syde:Toast({ Content = 'Configs disabled in syde:Load', Duration = 3 }) end
+		return false
+	end
+
+	local fileName = targetFile or syde.ConfigFile
+	local filePath = string.format("%s/%s.json", syde.ConfigFolder, fileName)
+
+	if not isfile or not isfile(filePath) then
+		if syde.Toast then
+			syde:Toast({ Content = 'No save file found at ' .. filePath, Duration = 3 })
+		end
+		return false
+	end
+
+	local ok, decoded, applied = pcall(function()
+		return LoadConfig(readfile(filePath))
+	end)
+
+	if ok and decoded then
+		if targetFile then
+			syde.ConfigFile = targetFile
+		end
+		if syde.Toast then
+			syde:Toast({ Content = 'loaded your sorry ass config', Duration = 3 })
+		end
+		return true
+	end
+
+	warn("[SYDE] Configurations Error " .. tostring(decoded))
+	if syde.Toast then
+		syde:Toast({ Content = 'Failed to load config', Duration = 3 })
+	end
+	return false
+end
+
+function syde:ListConfigs()
+	local list = {}
+	if not syde.ConfigEnabled then return list end
+	if not listfiles or not isfolder or not isfolder(syde.ConfigFolder) then return list end
+
+	local ok, files = pcall(listfiles, syde.ConfigFolder)
+	if not ok or type(files) ~= "table" then return list end
+
+	for _, full in ipairs(files) do
+		local name = tostring(full):match("([^/\\]+)%.json$")
+		if name and name ~= "SettingsConfig" then
+			table.insert(list, name)
+		end
+	end
+	table.sort(list)
 	return list
 end
 
-function findWateringCan(preferred)
-	preferred = preferred or autowatercanselect
-	local candidates = {}
-	local function collect(container)
-		if not container then
-			return
-		end
-		for _, child in container:GetChildren() do
-			if child:IsA("Tool") and child:GetAttribute("WateringCan") then
-				table.insert(candidates, child)
-			end
-		end
-	end
-	collect(localPlayer.Character)
-	collect(localPlayer:FindFirstChild("Backpack"))
-	if #candidates == 0 then
-		return nil
-	end
-	if preferred == "Best Available" then
-		table.sort(candidates, function(a, b)
-			local nameA = a:GetAttribute("WateringCan") or a.Name
-			local nameB = b:GetAttribute("WateringCan") or b.Name
-			return (wateringCanPriority[nameA] or 99) < (wateringCanPriority[nameB] or 99)
-		end)
-		return candidates[1]
-	end
-	if preferred and preferred ~= "" and preferred ~= "Auto (Any)" then
-		for _, tool in candidates do
-			local canName = tool:GetAttribute("WateringCan") or tool.Name
-			if canName == preferred or tool.Name == preferred then
-				return tool
-			end
-		end
-		return nil
-	end
-	return candidates[1]
-end
-
-function autowaterallowed(seedName)
-	local set = {}
-	for name in (autowaterfilterlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if autowaterfilterlist == "" or autowaterfilterlist == "None" then
-		return autowaterfiltertype ~= "Whitelist"
-	end
-	if autowaterfiltertype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-
-function iscoveredbysprinkler(plantPos)
-	local farm = getPlayerFarm()
-	return isPositionCoveredBySprinkler(farm, plantPos)
-end
-
-function doautowater()
-	if autowateractive then return end
-	autowateractive = true
-	local char = localPlayer.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hum then 
-		autowateractive = false
-		return 
-	end
-	local wateringCan = findWateringCan()
-	if not wateringCan then 
-		autowateractive = false
-		return 
-	end
-	local canName = wateringCan:GetAttribute("WateringCan")
-	local farm = getPlayerFarm()
-	local plants = farm and farm:FindFirstChild("Plants")
-	if not plants then 
-		autowateractive = false
-		return 
-	end
-	local children = plants:GetChildren()
-	if #children == 0 then 
-		autowateractive = false
-		return 
-	end
-	local needsUnequip = false
-	local equipped = false
-	local netMod = findModule("Networking")
-	local Networking = netMod and safeRequire(netMod)
-	if not Networking or not Networking.WateringCan or not Networking.WateringCan.UseWateringCan then
-		autowateractive = false
-		return
-	end
-	for _, plant in children do
-		if not autowaterrunning then break end
-		local seedName = getseedname(plant)
-		if seedName and autowaterallowed(seedName) and shouldAutoWaterPlant(plant) then
-			local rp = plant:FindFirstChild("RootPart") or plant.PrimaryPart or plant:FindFirstChildWhichIsA("BasePart")
-			if rp then
-				local waterPos = raycastPlantAreaPosition(rp.Position, farm)
-				if not autowaternoduplicates or not iscoveredbysprinkler(waterPos) then
-					if not equipped then
-						if wateringCan.Parent ~= char then
-							hum:EquipTool(wateringCan)
-							needsUnequip = true
-							task.wait(0.1)
-						end
-						equipped = true
-					end
-					pcall(function()
-						Networking.WateringCan.UseWateringCan:Fire(waterPos - Vector3.new(0, 0.3, 0), canName, wateringCan)
-					end)
-					task.wait(0.55)
-				end
-			end
-		end
-	end
-	if needsUnequip and wateringCan.Parent == char then
-		wateringCan.Parent = localPlayer:FindFirstChild("Backpack")
-	end
-	autowateractive = false
-end
-
-hub:CreateModule("Main", {
-	name = "Auto Watering Can",
-	on = false,
-	bind = "None",
-	desc = "Auto water plants. Waters mature plants by default to boost fruit growth.",
-	callback = function(enabled)
-		autowaterrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while autowaterrunning do
-					pcall(doautowater)
-					task.wait(autowaterdelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Watering Delay", value = 5, min = 1, max = 30, suffix = "s", callback = function(value)
-			autowaterdelay = value
-		end},
-		{type = "dropdown", label = "Watering Can", value = "Auto (Any)", list = getWateringCanSelectList(), callback = function(value)
-			autowatercanselect = value
-		end},
-		{type = "checkbox", label = "Skip If All Fruits Grown", value = false, callback = function(value)
-			autowaterskipallfruitsgrown = value
-		end},
-		{type = "checkbox", label = "Skip Mature Plants", value = false, callback = function(value)
-			autowaterskipmature = value
-		end},
-		{type = "checkbox", label = "Skip Active Boost", value = false, callback = function(value)
-			autowaterskipboost = value
-		end},
-		{type = "checkbox", label = "No Duplicates (Check Sprinklers)", value = true, callback = function(value)
-			autowaternoduplicates = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			autowaterfiltertype = value
-		end},
-		{type = "multiselect", label = "Filter Plants", value = "None", list = gameLists.plants, callback = function(value)
-			autowaterfilterlist = value
-		end},
-	}
-})
-
-end
-do
-local claimrunning = false
-local claimspeed = 80
-local claimMoveMode = "Teleport"
-local claimAutoReturn = true
-local claimLoopDelay = 0.35
-local claimSeedFilter = ""
-local claimSeedFilterType = "Whitelist"
-
-local function getSeedSpawnPrompt(inst)
-	if not inst then
-		return nil
-	end
-	if inst:IsA("ProximityPrompt") then
-		return inst
-	end
-	local claimPrompt = inst:FindFirstChild("ClaimPrompt", true)
-	if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
-		return claimPrompt
-	end
-	return findDescendantOfClass(inst, "ProximityPrompt")
-end
-
-local function getSeedSpawnPart(inst)
-	if not inst then
-		return nil
-	end
-	if inst:IsA("BasePart") then
-		return inst
-	end
-	if inst:IsA("Model") then
-		return inst.PrimaryPart or findDescendantOfClass(inst, "BasePart")
-	end
-	return nil
-end
-
-local function getSeedSpawnFolders()
-	local folders = {}
-	local map = workspace:FindFirstChild("Map")
-	if not map then
-		return folders
-	end
-	for _, name in {"SeedPackSpawnServerLocations", "SeedPackSpawnClient"} do
-		local folder = map:FindFirstChild(name)
-		if folder then
-			table.insert(folders, folder)
-		end
-	end
-	return folders
-end
-
-local function collectClaimableSeedSpawns()
-	local targets = {}
-	local seen = {}
-	local function addTarget(rootInst, part, prompt)
-		if not part or not prompt or not prompt.Parent or prompt.Enabled == false then
-			return
-		end
-		local key = tostring(part:GetFullName()) .. "|" .. tostring(prompt:GetFullName())
-		if seen[key] then
-			return
-		end
-		local label = resolveEventSeedLabel(rootInst)
-			or resolveEventSeedLabel(part)
-			or resolveEventSeedLabel(prompt.Parent)
-			or labelFromPrompt(prompt)
-		if not label or not csvMatchesFilter(claimSeedFilter, label, claimSeedFilterType) then
-			return
-		end
-		seen[key] = true
-		table.insert(targets, {
-			part = part,
-			prompt = prompt,
-			label = label,
-			tier = EVENT_SEED_PRIORITY[label] or EVENT_SEED_PRIORITY[label:gsub(" Seed$", "")] or 9,
-		})
-	end
-	for _, spawnLocs in getSeedSpawnFolders() do
-		for _, child in spawnLocs:GetChildren() do
-			local part = getSeedSpawnPart(child)
-			local prompt = getSeedSpawnPrompt(child)
-			addTarget(child, part, prompt)
-			for _, desc in child:GetDescendants() do
-				if desc:IsA("ProximityPrompt") and desc.Enabled ~= false then
-					local promptPart = getSeedSpawnPart(desc.Parent) or (desc.Parent:IsA("BasePart") and desc.Parent)
-					addTarget(child, promptPart, desc)
-				end
-			end
-		end
-	end
-	table.sort(targets, function(a, b)
-		if a.tier ~= b.tier then
-			return a.tier < b.tier
-		end
-		return a.label < b.label
-	end)
-	return targets
-end
-
-local function claimSeedPrompt(prompt)
-	if not prompt or not prompt.Parent then
+function syde:SaveConfigAs(name)
+	if not syde.ConfigEnabled then
+		if syde.Toast then syde:Toast({ Content = 'Configs disabled in syde:Load', Duration = 3 }) end
 		return false
 	end
-	local oldHold = prompt.HoldDuration
-	prompt.HoldDuration = 0
-	local ok = firePrompt(prompt)
-	prompt.HoldDuration = oldHold
+	if type(name) ~= "string" or name == "" then return false end
+	if not writefile then
+		if syde.Toast then syde:Toast({ Content = 'Executor has no writefile', Duration = 3 }) end
+		return false
+	end
+
+	local Data = { _version = CONFIG_VERSION }
+	local count = 0
+	for FlagName, Flag in pairs(syde.Flags) do
+		if Flag.Type == "ColorPicker" then
+			if Flag.Color then
+				Data[FlagName] = syde:ColorPack(Flag.Color)
+				count = count + 1
+			end
+		elseif Flag.V ~= nil then
+			Data[FlagName] = Flag.V
+			count = count + 1
+		elseif Flag.Color then
+			Data[FlagName] = syde:ColorPack(Flag.Color)
+			count = count + 1
+		elseif Flag.StarterValue ~= nil then
+			Data[FlagName] = Flag.StarterValue
+			count = count + 1
+		end
+	end
+
+	if makefolder and isfolder and not isfolder(syde.ConfigFolder) then
+		makefolder(syde.ConfigFolder)
+	end
+
+	local ok, err = pcall(function()
+		writefile(string.format("%s/%s.json", syde.ConfigFolder, name), HttpService:JSONEncode(Data))
+	end)
+
+	if ok then
+		syde.ConfigFile = name
+		if syde.Toast then
+			syde:Toast({ Content = 'saved your sorry ass config', Duration = 3 })
+		end
+		return true
+	else
+		warn("[SYDE] Save failed:", err)
+		if syde.Toast then
+			syde:Toast({ Content = 'Save failed: ' .. tostring(err), Duration = 3 })
+		end
+	end
+	return false
+end
+
+function syde:DeleteConfig(name)
+	if not syde.ConfigEnabled then return false end
+	if type(name) ~= "string" or name == "" then return false end
+	local filePath = string.format("%s/%s.json", syde.ConfigFolder, name)
+	if isfile and isfile(filePath) and delfile then
+		return pcall(delfile, filePath)
+	end
+	return false
+end
+
+local function autoloadFilePath()
+	return string.format("%s/_autoload.txt", syde.ConfigFolder)
+end
+
+function syde:GetAutoLoad()
+	-- Default OFF unless the user explicitly enables it
+	if not syde.ConfigEnabled or not isfile then return false end
+	local path = autoloadFilePath()
+	if not isfile(path) then return false end
+	local ok, content = pcall(readfile, path)
+	if not ok or not content then return false end
+	return tostring(content):match("^%s*(.-)%s*$") == "1"
+end
+
+function syde:SetAutoLoad(enabled)
+	if not syde.ConfigEnabled or not writefile then return false end
+	if makefolder and isfolder and not isfolder(syde.ConfigFolder) then
+		makefolder(syde.ConfigFolder)
+	end
+	local ok = pcall(writefile, autoloadFilePath(), enabled and "1" or "0")
 	return ok
 end
 
-local function moveClaimToPosition(hrp, hum, targetPos)
-	if not hrp or not targetPos then
-		return false
+
+--@UiSetup
+
+local function applyTitleBranding(title, subText)
+	if not top then
+		bindUiRefs()
 	end
-	if claimMoveMode == "Teleport" then
-		return safeTeleport(CFrame.new(targetPos))
-	end
-	local dist = (targetPos - hrp.Position).Magnitude
-	if dist < 3 then
-		return true
-	end
-	local duration = math.max(0.12, dist / math.max(claimspeed, 10))
-	if hum then hum.PlatformStand = true end
-	local bv = hrp:FindFirstChild("ClaimSeedBV") or Instance.new("BodyVelocity")
-	bv.Name = "ClaimSeedBV"
-	bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-	bv.Parent = hrp
-	local bg = hrp:FindFirstChild("ClaimSeedBG") or Instance.new("BodyGyro")
-	bg.Name = "ClaimSeedBG"
-	bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-	bg.Parent = hrp
-	local tween = TS:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-	local done = false
-	local conn = tween.Completed:Connect(function()
-		done = true
+	pcall(function()
+		if not top then
+			return
+		end
+		local titleLabel = top:FindFirstChild("title")
+		if titleLabel then
+			titleLabel.Text = title or ""
+			local subLabel = titleLabel:FindFirstChild("sub")
+			if subLabel then
+				subLabel.Text = subText or ""
+			end
+		end
 	end)
-	tween:Play()
-	while not done and claimrunning do
-		task.wait(0.05)
-	end
-	conn:Disconnect()
-	if bv then bv:Destroy() end
-	if bg then bg:Destroy() end
-	if hum then hum.PlatformStand = false end
-	return claimrunning
 end
 
-local function cleanupClaimMovement(hrp, hum)
-	if hum then hum.PlatformStand = false end
-	if hrp then
-		local bv = hrp:FindFirstChild("ClaimSeedBV")
-		if bv then bv:Destroy() end
-		local bg = hrp:FindFirstChild("ClaimSeedBG")
-		if bg then bg:Destroy() end
+local function applyHomePresenceBranding(homeData)
+	if not homeData or not bindUiRefs() then
+		return
+	end
+
+	local homePage = pages:FindFirstChild("home")
+	if not homePage then
+		return
+	end
+
+	pcall(function()
+		local general = homePage:FindFirstChild("general")
+		local presence = general and general:FindFirstChild("presence")
+		if not presence then
+			return
+		end
+		local profile = presence:FindFirstChild("Profile")
+		if profile and profile:FindFirstChild("ImageLabel") then
+			local imageLabel = profile.ImageLabel
+			local text = imageLabel:FindFirstChild("Text")
+			if text then
+				if text:FindFirstChild("Header") then
+					text.Header.Text = homeData.hTitle or ""
+				end
+				if text:FindFirstChild("Sub") then
+					text.Sub.Text = homeData.hSubText or ""
+				end
+			end
+			if homeData.profileImage then
+				imageLabel.Image = "rbxassetid://" .. homeData.profileImage
+			end
+		end
+
+		local wallpaper = presence:FindFirstChild("wallpaper")
+		if wallpaper then
+			-- Keep the home wallpaper slot, but do not stamp the hub logo onto it.
+			-- The logo asset is a large translucent C and shows through tab pages.
+			if wallpaper:IsA("ImageLabel") or wallpaper:IsA("ImageButton") then
+				wallpaper.Image = ""
+				wallpaper.ImageTransparency = 1
+			end
+		end
+
+		local placeIdLabel = presence:FindFirstChild("PlaceID")
+		if placeIdLabel then
+			local s = tostring(game.PlaceId)
+			if #s >= 9 then
+				placeIdLabel.Text = "Place ID: " .. s:sub(1, 4) .. "-" .. s:sub(5, 8) .. "-" .. s:sub(9)
+			else
+				placeIdLabel.Text = "Place ID: " .. s
+			end
+		end
+	end)
+end
+
+local function stripDemoBranding()
+	pcall(function()
+		applyTitleBranding("", "")
+		if bindUiRefs() then
+			local homePage = pages:FindFirstChild("home")
+			if homePage then
+				homePage.Visible = false
+			end
+			applyHomePresenceBranding({
+				hTitle = "",
+				hSubText = "",
+			})
+		end
+	end)
+end
+
+stripDemoBranding()
+
+--
+
+local Connected = false
+local settingsOpen = false
+local pluginsOpen = false
+local uiclosed = false
+local userinfodisabled = false
+local intro = false
+local bluron = false
+local blurDepthOfField = nil
+local glow = false
+
+local function destroyBlurDepthOfField()
+	if blurDepthOfField and blurDepthOfField.Parent then
+		pcall(function()
+			blurDepthOfField:Destroy()
+		end)
+	end
+	blurDepthOfField = nil
+
+	local lighting = game:GetService("Lighting")
+	for _, child in ipairs(lighting:GetChildren()) do
+		if child:IsA("DepthOfFieldEffect") and child.Name == BLUR_DOF_NAME then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
 	end
 end
 
-hub:CreateModule("Main", {
-	name = "Auto Claim Seed",
-	on = false,
-	bind = "None",
-	desc = "Claim event seeds (Gold, Rainbow, Mega).",
-	callback = function(enabled)
-		claimrunning = enabled
-		if enabled then
-			task.spawn(function()
-				local returnCF = nil
-				while claimrunning do
-					local char = localPlayer.Character
-					local hrp = char and char:FindFirstChild("HumanoidRootPart")
-					local hum = char and char:FindFirstChildOfClass("Humanoid")
-					local targets = collectClaimableSeedSpawns()
-					if hrp and hum and #targets > 0 then
-						if not returnCF then
-							returnCF = hrp.CFrame
-						end
-						for _, target in ipairs(targets) do
-							if not claimrunning then
-								break
+local function createBlurDepthOfField()
+	destroyBlurDepthOfField()
+
+	local dof = Instance.new("DepthOfFieldEffect")
+	dof.Name = BLUR_DOF_NAME
+	dof.Parent = game:GetService("Lighting")
+	dof.Enabled = true
+	dof.FocusDistance = 51.6
+	dof.InFocusRadius = 50
+	dof.NearIntensity = 1
+	dof.FarIntensity = 0
+	blurDepthOfField = dof
+	return dof
+end
+
+local uitoggle = Enum.KeyCode.RightShift
+--
+
+function applyLayout(isMobile)
+	--	Library.lib.Size = isMobile and UDim2.new(0, 543,0, 321) or UDim2.new(0, 715, 0, 575)
+	tweenservice:Create(Library.main, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {Size = isMobile and UDim2.new(0, 543,0, 321) or UDim2.new(0, 715, 0, 575)}):Play()
+	local shadow = window:FindFirstChild("Shadow")
+	if shadow then
+		shadow.Visible = not isMobile 
+	end
+end
+
+
+local function updateLayout()
+	local screenSize = camera.ViewportSize
+	local mobile = userinput.TouchEnabled
+	applyLayout(mobile)
+end
+
+--@@Notification
+local notifications = {}
+local notificationSpacing = 10
+
+local tweenInfo = TweenInfo.new(0.7, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
+
+function updatePositions()
+	local screenHeight = workspace.CurrentCamera.ViewportSize.Y - 200
+	local currentY = screenHeight
+
+	for i = #notifications, 1, -1 do
+		local notif = notifications[i]
+		local targetPosition = UDim2.new(0, 250, 0, currentY - notif.Size.Y.Offset + 60) 
+		tweenservice:Create(notif, tweenInfo, { Position = targetPosition }):Play()
+		currentY = currentY - (notif.Size.Y.Offset + notificationSpacing)
+	end
+end
+
+for _, temp in ipairs(Library.Notification:GetChildren()) do
+	if temp:IsA("Frame") then
+		temp.Visible = false
+	end
+end 
+
+function syde:Notify(Notification)
+	if syde.SuppressNotify then return end
+	task.spawn(function()
+
+		local NotifData = {
+			Title = Notification.Title;
+			Content = Notification.Content;
+			Duration = Notification.Duration or 5;
+			Icon = Notification.Icon or '';
+			Varient = Notification.Varient or 'Default';
+			Animation = Notification.Animation ;
+			ConfirmCallback = Notification.ConfirmCallback
+		}
+
+
+
+		local Notification = Library.Notification.Default:Clone()
+		Notification.Visible = true
+		Notification.Parent = Library.Notification
+		Notification.Title.Text = NotifData.Title
+		Notification.Content.Text = NotifData.Content
+		Notification.Content.Size = UDim2.new(0, 200,0, Notification.Content.TextBounds.Y )
+		Notification.icon.Image = 'rbxassetid://'..NotifData.Icon
+		Notification.icon.Visible = true
+
+
+
+		local function CloseNotif()
+
+			if Notification and Notification.Parent then
+				table.remove(notifications, table.find(notifications, Notification))
+				tweenservice:Create(Notification.UIScale, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Scale = 0.9}):Play()
+				tweenservice:Create(Notification.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.95}):Play()
+				tweenservice:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.75}):Play()
+				--	tweenservice:Create(Notification.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.5}):Play()
+				tweenservice:Create(Notification.Content, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.78}):Play()
+
+				task.wait(0.15)
+
+				tweenservice:Create(Notification, TweenInfo.new(0.95, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, Notification.Position.X.Offset + 400, 0, Notification.Position.Y.Offset) }):Play()
+				task.wait(0.4)
+				Notification:Destroy()
+				updatePositions()
+			end
+
+		end
+
+		if NotifData.Animation == 'Wiggle' then
+			syde:WiggleText(Notification.Title)
+		end
+
+		if NotifData.Varient == 'Options' then
+			Notification.Block.Visible = true
+			Notification.Size = UDim2.new(1, 0,0, Notification.Content.TextBounds.Y + 80)
+			Notification.Block.Cancel.MouseButton1Click:Connect(function()
+				CloseNotif()
+			end)
+			Notification.Block.Confirm.MouseButton1Click:Connect(function()
+				if NotifData.ConfirmCallback then
+					NotifData.ConfirmCallback()
+					CloseNotif()
+				end
+			end)
+		else
+			Notification.Size = UDim2.new(1, 0,0, Notification.Content.TextBounds.Y + 45)
+		end
+
+
+		table.insert(notifications, Notification)
+		updatePositions()
+
+		--	Notification.UIScale.Scale = 0.9
+		Notification.close.ImageTransparency = 0.95
+		Notification.BackgroundTransparency = 0.75
+		--	Notification.Title.TextTransparency = 0.5
+		Notification.Content.TextTransparency = 0.78
+
+		Notification.Position = UDim2.new(0, 600, 0, 637)
+
+
+
+		task.wait(0.45)
+
+		if NotifData.Icon ~= '' then
+			tweenservice:Create(Notification.Title, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(0, 40,0, 10)}):Play()
+			task.wait(0.035)
+			tweenservice:Create(Notification.Content, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(0, 40,0, 30)}):Play()
+
+			tweenservice:Create(Notification.icon, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+		end
+
+
+		tweenservice:Create(Notification.UIScale, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Scale = 1}):Play()
+		tweenservice:Create(Notification.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.75}):Play()
+		tweenservice:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+		--	tweenservice:Create(Notification.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+		tweenservice:Create(Notification.Content, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+		Notification.close.MouseEnter:Connect(function()
+			tweenservice:Create(Notification.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.25}):Play()
+		end)
+
+		Notification.close.MouseLeave:Connect(function()
+			tweenservice:Create(Notification.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.75}):Play()
+		end)
+
+		Notification.close.MouseButton1Click:Connect(function()
+			CloseNotif()
+		end)
+
+		task.delay(NotifData.Duration, function()
+			CloseNotif()
+		end)
+	end)
+end
+
+
+--@@Modal
+local activeModals = 0 -- track how many modals are currently open
+
+function syde:Modal(Modal)
+	task.spawn(function()
+		local ModalData = {
+			Title = Modal.Title;
+			Content = Modal.Content;
+			ConfirmCallBack = Modal.ConfimCallBack
+		}
+
+		local ModalInstance = ui.main.modal:Clone()
+		ModalInstance.Visible = true
+		ModalInstance.Parent = ui.main
+		ModalInstance.Title.Text = ModalData.Title
+		ModalInstance.Content.Text = ModalData.Content
+		--	ModalInstance.Content.Size = UDim2.new(1, ModalInstance.Content.Size.X.Offset, 1, ModalInstance.Content.TextBounds.Y)
+		ModalInstance.Size = UDim2.new(0, 350,0, 144)
+		ModalInstance.BackgroundTransparency = 1
+		ModalInstance.Title.TextTransparency = 1
+		ModalInstance.Content.TextTransparency = 1
+
+		ModalInstance.Buttons.Confirm.BackgroundTransparency = 1
+		ModalInstance.Buttons.Confirm.TextLabel.TextTransparency = 1
+		--	ModalInstance.Buttons.Confirm.UIStroke.Transparency = 1
+
+		ModalInstance.Buttons.Cancel.BackgroundTransparency = 1
+		ModalInstance.Buttons.Cancel.TextLabel.TextTransparency = 1
+		ModalInstance.Buttons.Cancel.UIStroke.Transparency = 1
+
+		local function openModal()
+			tweenservice:Create(ModalInstance.Content, TweenInfo.new(0.75, Enum.EasingStyle.Quint), {Size = UDim2.new(1, ModalInstance.Content.Size.X.Offset, 1, ModalInstance.Content.TextBounds.Y)}):Play()
+			activeModals += 1
+			--	ModalInstance.Size = UDim2.new(0, ModalInstance.Size.X.Offset, 0, ModalInstance.Content.TextBounds.Y + 120)
+			tweenservice:Create(ModalInstance, TweenInfo.new(0.65, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 350,0,  ModalInstance.Content.TextBounds.Y + 150)}):Play()
+
+			tweenservice:Create(ModalInstance, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			tweenservice:Create(ModalInstance.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+			tweenservice:Create(ModalInstance.Title, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			tweenservice:Create(ModalInstance.Content, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+			tweenservice:Create(ModalInstance.Buttons.Confirm, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.5}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Confirm.TextLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			--	tweenservice:Create(ModalInstance.Buttons.Confirm.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+
+			tweenservice:Create(ModalInstance.Buttons.Cancel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Cancel.TextLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Cancel.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+
+		end
+		openModal()
+
+		local function closeModal()
+			activeModals -= 1
+			ModalInstance.Buttons.Cancel.Interactable = false
+			ModalInstance.Buttons.Confirm.Interactable = false
+			tweenservice:Create(ModalInstance, TweenInfo.new(0.75, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 350,0, 147)}):Play()
+			tweenservice:Create(ModalInstance, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Content, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+
+			tweenservice:Create(ModalInstance.Buttons.Confirm, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Confirm.TextLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			--	tweenservice:Create(ModalInstance.Buttons.Confirm.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+
+			tweenservice:Create(ModalInstance.Buttons.Cancel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Cancel.TextLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+			tweenservice:Create(ModalInstance.Buttons.Cancel.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+			task.wait(0.45)
+			ModalInstance:Destroy()
+		end
+
+
+
+		if activeModals == 1 then
+			ui.main.dim.Visible = true
+			tweenservice:Create(ui.main.dim, TweenInfo.new(0.73, Enum.EasingStyle.Exponential), {
+				BackgroundTransparency = 0.3
+			}):Play()
+		end
+
+		ModalInstance.Buttons.Confirm.MouseButton1Click:Connect(function()
+			if typeof(ModalData.ConfirmCallBack) == "function" then
+				ModalData.ConfirmCallBack()
+			end
+
+			closeModal()
+
+			if activeModals == 0 then
+				tweenservice:Create(ui.main.dim, TweenInfo.new(0.73, Enum.EasingStyle.Exponential), {
+					BackgroundTransparency = 1
+				}):Play()
+				task.wait(0.7)
+				ui.main.dim.Visible = false
+			end
+		end)
+
+		ModalInstance.Buttons.Cancel.MouseButton1Click:Connect(function()
+			closeModal()
+			tweenservice:Create(ui.main.dim, TweenInfo.new(0.73, Enum.EasingStyle.Exponential), {
+				BackgroundTransparency = 1
+			}):Play()
+			task.wait(0.7)
+			ui.main.dim.Visible = false
+		end)
+
+	end)
+end
+
+
+--@@Toast
+local toasts = {}
+local toastSpacing = 8
+
+local tweenInfo = TweenInfo.new(
+	0.55,
+	Enum.EasingStyle.Exponential,
+	Enum.EasingDirection.Out
+)
+
+local function updateToastPositions()
+	local startY = 10 -- padding from top of toastholder
+	local currentY = startY
+
+	for i = 1, #toasts do
+		local toast = toasts[i]
+		if toast and toast.Parent then
+			local target = UDim2.new(
+				0.5, 0,
+				0, currentY
+			)
+
+			tweenservice:Create(toast, tweenInfo, {
+				Position = target
+			}):Play()
+
+			currentY += toast.Size.Y.Offset + toastSpacing
+		end
+	end
+end
+
+function syde:Toast(Toasty)
+	task.spawn(function()
+		local Data = {
+			Content = Toasty.Content or "",
+			Duration = Toasty.Duration or 5,
+			Icon = Toasty.Icon or ""
+		}
+
+		local Toast = ui.toastholder.toast:Clone()
+		Toast.Visible = true
+		Toast.Parent = ui.toastholder
+		Toast.AnchorPoint = Vector2.new(0.5, 0)
+
+		-- Content
+		Toast.Content.Text = Data.Content
+		-- task.wait(0) -- allow TextBounds update
+
+		Toast.Size = UDim2.new(1, Toast.Content.TextBounds.X - 140 ,0, 40)
+		--  tweenservice:Create(Toast, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(1, Toast.Content.TextBounds.X - 140 ,0, 40)}):Play()
+
+		if Data.Icon ~= "" then
+			Toast.icon.ImageLabel.Image = "rbxassetid://" .. Data.Icon
+			Toast.icon.ImageLabel.ImageTransparency = 0
+		end
+
+
+
+		-- Spawn ABOVE holder
+		Toast.Position = UDim2.new(
+			0.5, 0,
+			0, -Toast.Size.Y.Offset - 20
+		)
+
+		-- Insert at TOP
+		table.insert(toasts, 1, Toast)
+		updateToastPositions()
+
+		-- Auto remove
+		task.delay(Data.Duration, function()
+			if not Toast or not Toast.Parent then return end
+
+			table.remove(toasts, table.find(toasts, Toast))
+
+			tweenservice:Create(
+				Toast,
+				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+				{
+					Position = Toast.Position - UDim2.fromOffset(0, 30),
+					BackgroundTransparency = 1
+				}
+			):Play()
+
+			for _, v in ipairs(Toast:GetDescendants()) do
+				if v:IsA("TextLabel") then
+					tweenservice:Create(v, TweenInfo.new(0.3), {
+						TextTransparency = 1
+					}):Play()
+				elseif v:IsA("ImageLabel") then
+					tweenservice:Create(v, TweenInfo.new(0.3), {
+						ImageTransparency = 1
+					}):Play()
+				elseif v:IsA("Frame") then
+					tweenservice:Create(v, TweenInfo.new(0.3), {
+						BackgroundTransparency = 1
+					}):Play()
+				end
+			end
+
+			task.wait(0.35)
+			Toast:Destroy()
+			updateToastPositions()
+		end)
+	end)
+end
+
+
+
+--@SetupFunctionst
+function SetUserInfo()
+	local LocalPlayer = player.LocalPlayer
+
+	local PLACEHOLDER_IMAGE = "rbxassetid://0" 
+	local THUMBNAIL_TYPE = Enum.ThumbnailType.HeadShot
+	local THUMBNAIL_SIZE = Enum.ThumbnailSize.Size420x420
+
+	local imageLabel = window:WaitForChild("user"):WaitForChild("headshot")
+	imageLabel.Image = PLACEHOLDER_IMAGE
+
+	local success, thumbnail = pcall(function()
+		return player:GetUserThumbnailAsync(LocalPlayer.UserId, THUMBNAIL_TYPE, THUMBNAIL_SIZE)
+	end)
+
+	if success and thumbnail then
+		imageLabel.Image = thumbnail
+		window.user.headshot.id.username.Text = LocalPlayer.Name
+		window.user.headshot.id.displayname.Text = "@"..LocalPlayer.DisplayName
+	else
+		imageLabel.Image = PLACEHOLDER_IMAGE
+	end
+end
+
+--@ Toggle Search
+local searchopen = false
+
+function opensearch()
+	searchopen = true
+	window.dim.Visible = true
+	window.search.Visible = true
+	window.search.Container.Visible = true
+	window.search.Visible = true
+
+
+	if window.search.Frame.TextBox.Text ~= '' then
+		tweenservice:Create(window.search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { Size = UDim2.new(0, 350,0, 230) }):Play()
+	else
+		tweenservice:Create(window.search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { Size = UDim2.new(0, 350,0, 60) }):Play()
+	end
+
+	tweenservice:Create(window.dim, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.45 }):Play()
+	tweenservice:Create(window.search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+	tweenservice:Create(window.search.Frame.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+
+	tweenservice:Create(window.search.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+	tweenservice:Create(window.search.close.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+
+	tweenservice:Create(window.search.Frame.TextBox, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+end
+
+function closesearch()
+	searchopen = false
+	window.search.Container.Visible = false
+	tweenservice:Create(window.search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { Size = UDim2.new(0, 350,0, 60) }):Play()
+	tweenservice:Create(window.dim, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+	tweenservice:Create(window.search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+	tweenservice:Create(window.search.Frame.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+
+	tweenservice:Create(window.search.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+	tweenservice:Create(window.search.close.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+
+	tweenservice:Create(window.search.Frame.TextBox, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+	task.wait(0.5)
+	window.dim.Visible = false
+	window.search.Visible = false
+end
+
+--@ ToggleUI
+
+function openui()
+	pages.Visible = true
+	window.tabs.Visible = true
+	window.user.Visible = true
+	window.Visible = true
+	uiclosed = false
+
+	if bluron then
+		syde:BindFrame(window, {
+			Transparency = 0.98;
+			BrickColor = BrickColor.new('Institutional white');
+		})
+		createBlurDepthOfField()
+		tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.45 }):Play()
+	else
+		tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0 }):Play()
+	end
+	tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 700,0, 560) }):Play()
+
+	tweenservice:Create(window.top.separator, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0 }):Play()
+	tweenservice:Create(window.top.title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 0 }):Play()
+	tweenservice:Create(window.top.title.sub, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 0 }):Play()
+
+	tweenservice:Create(window.top.functions, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0 }):Play()
+
+	if window.wallpaper.ison.Value  then
+		tweenservice:Create(window.wallpaper, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 0.84 }):Play()
+	end
+
+
+	for i,v in pairs(window.top.functions:GetChildren()) do
+		if v:IsA("Frame") then
+			tweenservice:Create(v, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.8 }):Play()
+			v.Visible = true
+			for i,v2 in pairs(v:GetChildren()) do
+				if v2:IsA("ImageLabel") then
+					tweenservice:Create(v2, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 0 }):Play()
+					v2.Visible = true
+				end
+			end
+			if v:FindFirstChild("rainbow") then
+				tweenservice:Create(v.rainbow, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1 }):Play()
+			end
+
+		end
+	end
+
+	tweenservice:Create(window.shadow.ImageLabel, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 0.5 }):Play()
+	tweenservice:Create(window.resize, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 0.3}):Play()
+
+	if glow == true then
+		for _, glowChild in ipairs(safeGetChildren(window.clipframe)) do
+			pcall(function()
+				if glowChild:IsA("ImageLabel") then
+					tweenservice:Create(glowChild, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 0.8}):Play()
+				end
+			end)
+		end
+
+		tweenservice:Create(window.shadow.glow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 0.9}):Play()
+		tweenservice:Create(window.shadow.glow1, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 0.9}):Play()
+	end
+
+
+end
+
+function closeui()
+	pages.Visible = false
+	window.tabs.Visible = false
+	window.user.Visible = false
+
+	tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1 }):Play()
+	tweenservice:Create(window, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Size = UDim2.new(window.Size.X.Scale, window.Size.X.Offset, window.Size.Y.Scale, 200) }):Play()
+
+	tweenservice:Create(window.top.separator, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1 }):Play()
+	tweenservice:Create(window.top.title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1 }):Play()
+	tweenservice:Create(window.top.title.sub, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1 }):Play()
+
+	if window.wallpaper.ison.Value  then
+		tweenservice:Create(window.wallpaper, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1 }):Play()
+	end
+
+
+	syde:UnbindFrame(window)
+	if bluron then
+		destroyBlurDepthOfField()
+	end
+
+	tweenservice:Create(window.top.functions, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1 }):Play()
+	for i,v in pairs(window.top.functions:GetChildren()) do
+		if v:IsA("Frame") then
+			tweenservice:Create(v, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1 }):Play()
+			v.Visible = false
+			for i,v2 in pairs(v:GetChildren()) do
+				if v2:IsA("ImageLabel") then
+					tweenservice:Create(v2, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1 }):Play()
+					v2.Visible = false
+				end
+			end
+		end
+	end
+
+	for _, glowChild in ipairs(safeGetChildren(window.clipframe)) do
+		pcall(function()
+			if glowChild:IsA("ImageLabel") then
+				tweenservice:Create(glowChild, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 1}):Play()
+			end
+		end)
+	end
+
+	tweenservice:Create(window.shadow.glow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 1}):Play()
+	tweenservice:Create(window.shadow.glow1, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 1}):Play()
+
+	tweenservice:Create(window.shadow.ImageLabel, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1 }):Play()
+	tweenservice:Create(window.resize, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1 }):Play()
+
+	closesettings()
+	closesearch()
+	settingsOpen = false
+
+
+
+	--task.wait(0.5)
+
+	window.Visible = false
+	uiclosed = true
+	syde:Toast({
+		Content = 'UI Hidden, Use '.. uitoggle.Name ..' To Open Back.',
+		Duration = 2,
+	})
+
+
+end
+
+local bounce = false
+
+function ToggleUI()
+	if bounce then return end
+	bounce = true
+
+	if uiclosed then
+		--	task.wait(0.2)
+		openui()
+
+		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			screenSize = workspace.CurrentCamera.ViewportSize
+			isMobile = userinput.TouchEnabled
+			updateLayout()
+		end)
+
+		updateLayout()
+
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
+		userinput:GetPropertyChangedSignal("TouchEnabled"):Connect(updateLayout)
+	else
+		closeui()
+	end
+
+	task.delay(0.2, function()
+		bounce = false
+	end)
+end
+
+window.top.functions.close.interact.MouseButton1Click:Connect(function()
+	syde:Modal({
+		Title = 'Please Confirm Below.',
+		Content = 'Are You Sure You Want To Close This UI?',
+		ConfimCallBack = function()
+			mh = false
+			rs:Disconnect()
+			ss:Disconnect()
+			--	if not ui.Parent then return end
+			task.wait(1)
+			Library:Destroy()
+		end,
+	})
+end)
+
+
+syde:HidePH(tabs, 'btn')
+syde:HidePH(pages, 'page')
+
+--@@Initialize
+function syde:Init(library)
+	if Library and not Library.Parent then
+		pcall(function()
+			Library.Parent = coregui
+		end)
+	end
+
+	if not bindUiRefs() then
+		syde:Report("Loading UI library", "Syde UI is not ready. Run syde:Load before syde:Init.")
+		return
+	end
+
+	if loaded == false then
+		local UI_TAG = "sydeUILoader"
+		local INTERNAL_UUID = ("SYDE-" .. tostring(game.JobId):gsub("-", "") .. tostring(tick())):gsub("%.", "")
+		local PROTECTION_EVENT = Instance.new("BindableEvent")
+		local HttpService = game:GetService("HttpService")
+
+		-- Load the Library
+		local successLibrary, Library = pcall(function()
+			return Library -- Replace with actual GetObjects if needed
+		end)
+
+		if not successLibrary or not Library then
+			syde:Report("Loading UI library", "Library/GetObjects returned nil - the UI asset failed to load")
+			return
+		end
+
+		Library.Name = UI_TAG
+		Library.ResetOnSpawn = false
+
+		local marker = Instance.new("StringValue")
+		marker.Name = MARKER_NAME
+		marker.Value = INTERNAL_UUID
+		marker.Parent = Library
+
+		pcall(function()
+			Library.Parent = coregui
+		end)
+
+		bindUiRefs()
+
+		-- Ensure Library stays in CoreGui
+		task.spawn(function()
+			while Library and Library.Parent do
+				task.wait(1)
+				if Library.Parent ~= coregui then
+					warn("[SYDE] UI moved. Restoring...")
+					pcall(function()
+						Library.Parent = coregui
+					end)
+				end
+			end
+		end)
+
+	end
+
+	local Data = {
+		Title = library.Title or (syde._LoadBranding and syde._LoadBranding.Name) or "Syde";
+		SubText = library.SubText or "Google";
+		Home = library.Home or {}
+	}
+
+	Data.Home.Enabled = (Data.Home.Enabled == true)
+	Data.Home.hTitle = Data.Home.hTitle or Data.Title
+	Data.Home.hSubText = Data.Home.hSubText or Data.SubText
+	Data.Home.profileImage = Data.Home.profileImage or library.profileImage or library.Logo
+		or (syde._LoadBranding and syde._LoadBranding.Logo)
+
+	applyTitleBranding(Data.Title, Data.SubText)
+	if Data.Home.Enabled then
+		applyHomePresenceBranding(Data.Home)
+	elseif bindUiRefs() then
+		local homePage = pages:FindFirstChild("home")
+		if homePage then
+			homePage.Visible = false
+		end
+	end
+
+	ui.Enabled = true
+
+	local Minihome = ui.minihome
+
+	local MinihomeData = {
+		QuickActions = library.QuickActions or false;
+	}
+
+	-- FPS tracking
+	local lastTime = tick()
+	local frames = 0
+
+	if mh then
+		rs = RunService.RenderStepped:Connect(function()
+			local info = Minihome and Minihome:FindFirstChild("info")
+			if not info then
+				if rs then rs:Disconnect() end
+				return
+			end
+
+			-- FPS
+			frames += 1
+			local now = tick()
+
+			if now - lastTime >= 1 then
+				local fps = math.floor(frames / (now - lastTime))
+				lastTime = now
+				frames = 0
+
+				info.fps.Text = fps .. " FPS"
+			end
+
+			-- Time → 8:45
+			local hour = tonumber(os.date("%I"))
+			info.time.Text = hour .. os.date(":%M")
+		end)
+		trackRuntimeConnection(rs)
+
+
+		if MinihomeData.QuickActions == false then
+			ui.minihome.quick.Visible = false
+			ui.minihome:TweenSize(UDim2.new(0, 150, 0, 40), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.8, true)
+		end
+	end
+
+
+	if not uiclosed then
+		ui.minihome.open.quickfunc.interact.MouseButton1Click:Connect(function()
+			ToggleUI()
+		end)
+	end
+
+	--dragging
+	syde:AddDrag(top, window, true)
+	if Minihome then
+		syde:AddDrag(Minihome, Minihome) -- make the watermark draggable
+	end
+	syde:MakeResizable(window.resize, window, Vector2.new(454, 228))
+
+	--initial transparency setup
+	top.title.TextTransparency = 1
+	tweenservice:Create(top.title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+	top.title.sub.TextTransparency = 1
+	tweenservice:Create(top.title.sub, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+
+	task.spawn(function()
+		task.wait(0.5)
+		local titleTween = tweenservice:Create(top.title, TweenInfo.new(1.65, Enum.EasingStyle.Exponential), { TextTransparency = 0 })
+		titleTween:Play()
+
+		task.wait(0.1)
+		local subTitleTween = tweenservice:Create(top.title.sub, TweenInfo.new(1.65, Enum.EasingStyle.Exponential), { TextTransparency = 0 })
+		subTitleTween:Play()
+
+		task.wait()
+		local textSize = top.title.TextBounds.X + 3
+
+		tweenservice:Create(top.title, TweenInfo.new(1.55, Enum.EasingStyle.Quint), {
+			Size = UDim2.new(0, textSize, 0, 20)
+		}):Play()
+	end)
+
+	local RunService = game:GetService("RunService")
+	local TweenService = game:GetService("TweenService")
+
+	local RainbowStates = {}
+
+
+	for _, v in ipairs(top.functions:GetChildren()) do
+		if not v:IsA("Frame") then continue end
+		if not v:FindFirstChild("ImageLabel") then continue end
+
+		local image = v.ImageLabel
+		local rain
+		local gradient
+		if v.Name == "plugins" then
+			rain = v.rainbow
+			gradient = rain:FindFirstChildOfClass("UIGradient")
+		end
+
+		if v.Name == "plugins" then
+			RainbowStates[v] = {
+				hue = math.random(),
+				connection = nil,
+			}
+		end
+
+		v.MouseEnter:Connect(function()
+			if not uiclosed then
+				if v.Name ~= "plugins" then
+					TweenService:Create(
+						image,
+						TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
+						{ ImageTransparency = 0.7 }
+					):Play()
+				end
+			end
+
+
+			if v.Name == "plugins" and gradient then
+				tweenservice:Create(v.rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+				local state = RainbowStates[v]
+				if state.connection then return end
+
+				state.connection = RunService.RenderStepped:Connect(function(dt)
+					state.hue = (state.hue + dt * 0.6) % 1
+
+					gradient.Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0, Color3.fromHSV(state.hue, 1, 1)),
+						ColorSequenceKeypoint.new(0.2, Color3.fromHSV((state.hue + 0.2) % 1, 1, 1)),
+						ColorSequenceKeypoint.new(0.4, Color3.fromHSV((state.hue + 0.4) % 1, 1, 1)),
+						ColorSequenceKeypoint.new(0.6, Color3.fromHSV((state.hue + 0.6) % 1, 1, 1)),
+						ColorSequenceKeypoint.new(0.8, Color3.fromHSV((state.hue + 0.8) % 1, 1, 1)),
+						ColorSequenceKeypoint.new(1, Color3.fromHSV((state.hue + 1) % 1, 1, 1)),
+					})
+				end)
+
+			end
+		end)
+
+
+		v.MouseLeave:Connect(function()
+			if not uiclosed then
+				if v.Name ~= "plugins" then
+					TweenService:Create(
+						image,
+						TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
+						{ ImageTransparency = 0 }
+					):Play()
+				end
+			end
+
+
+			if v.Name == "plugins" then
+				tweenservice:Create(v.rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+				local state = RainbowStates[v]
+				if state and state.connection then
+					state.connection:Disconnect()
+					state.connection = nil
+				end
+
+			end
+		end)
+	end
+
+
+	--[[if not searchopen then
+			closesearch()
+	end]]
+
+	window.search.close.interact.MouseButton1Click:Connect(function()
+		closesearch()
+	end)
+
+
+	local debounce = false
+	local DEBOUNCE_TIME = 0.1
+
+	top.functions.search.interact.MouseButton1Click:Connect(function()
+		if debounce then return end
+		debounce = true
+
+		if not searchopen then
+			opensearch()
+		else
+			closesearch()
+		end
+
+		task.delay(DEBOUNCE_TIME, function()
+			debounce = false
+		end)
+	end)
+
+
+
+	syde:AddConnection(syde.Comms.Event, function(p, value)
+		if p == "Accent" then
+			pcall(function()
+				tweenservice:Create(window.shadow.glow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageColor3 = value}):Play()
+				tweenservice:Create(window.shadow.glow1, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageColor3 = value}):Play()
+			end)
+			pcall(function()
+				local clip = window:FindFirstChild("clipframe")
+				if not clip then
+					return
+				end
+				for _, name in ipairs({"glow", "Glow", "v0", "v1"}) do
+					local glowChild = clip:FindFirstChild(name)
+					if glowChild and glowChild:IsA("ImageLabel") then
+						tweenservice:Create(glowChild, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageColor3 = value}):Play()
+					end
+				end
+			end)
+		end
+	end)
+
+	-- Syde Connection (Coming Soon)
+	pcall(SetUserInfo)
+	pcall(function()
+		local username = window.user.headshot.id.username
+		local width = measureLabelTextHeight(username, 10)
+		local textWidth = 10
+		pcall(function()
+			textWidth = username.TextBounds.X + 10
+		end)
+		tweenservice:Create(username, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Size = UDim2.new(0, textWidth,0, 10)}):Play()
+	end)
+
+	if userinfodisabled == false then
+		tweenservice:Create(window.tabs, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 200,1, -115) }):Play()
+	else
+		tweenservice:Create(window.tabs, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 200,1, -75) }):Play()
+	end
+
+	window.user.MouseEnter:Connect(function()
+		tweenservice:Create(window.user.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Quart), {Thickness = 1}):Play()
+	end)
+	window.user.MouseLeave:Connect(function()
+		tweenservice:Create(window.user.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Quart), {Thickness = 0}):Play()
+	end)
+
+	if Data.Home.Enabled then
+
+		applyHomePresenceBranding(Data.Home)
+
+	--[[	local executor = "Undetected"
+
+		local function detect()
+
+			if identifyexecutor then
+				executor = identifyexecutor()
+
+			elseif getexecutorname then
+				executor = getexecutorname()
+
+			elseif syn then
+				executor = "Synapse X"
+
+			elseif KRNL_LOADED then
+				executor = "KRNL"
+
+			elseif is_sirhurt_closure then
+				executor = "SirHurt"
+
+			elseif pebc_execute then
+				executor = "ProtoSmasher"
+
+			elseif secure_load then
+				executor = "Sentinel"
+
+			elseif OXYGEN_LOADED then
+				executor = "Oxygen U"
+
+			elseif fluxus then
+				executor = "Fluxus"
+
+			elseif is_fluxus_closure then
+				executor = "Fluxus"
+
+			elseif getrenv().Xeno then
+				executor = "Xeno"
+
+			elseif getrenv().Solara then
+				executor = "Solara"
+
+			elseif getgenv().Solara then
+				executor = "Solara"
+
+			elseif getgenv().Xeno then
+				executor = "Xeno"
+
+			elseif SW_LOADED then
+				executor = "Script-Ware"
+
+			elseif is_electron then
+				executor = "Electron"
+
+			elseif getexecutor then
+				executor = getexecutor()
+
+			end
+
+		end
+
+		--	detect()
+
+		local ExecutorUI =
+			window.pages.home.general.presence.Executor
+
+		local Frame = ExecutorUI.Frame
+		local Label = Frame.TextLabel
+
+
+		Label.Text = executor
+
+		task.wait() -- allow TextBounds to update
+
+
+		local textWidth =
+			math.max(Label.TextBounds.X, 40)
+
+		local frameWidth =
+			textWidth + 20
+
+		local containerWidth =
+			frameWidth + 65
+
+
+		TweenService:Create(
+			Label,
+			TweenInfo.new(.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+			{
+				Size = UDim2.fromOffset(textWidth, Label.AbsoluteSize.Y)
+			}
+		):Play()
+
+
+		TweenService:Create(
+			Frame,
+			TweenInfo.new(.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+			{
+				Size = UDim2.fromOffset(frameWidth, Frame.AbsoluteSize.Y)
+			}
+		):Play()
+
+
+		TweenService:Create(
+			ExecutorUI,
+			TweenInfo.new(.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+			{
+				Size = UDim2.fromOffset(containerWidth, ExecutorUI.AbsoluteSize.Y)
+			}
+		):Play()
+
+		window.pages.home.general.presence.Executor.Frame.TextLabel.Text =
+			executor]]
+
+		local layout = Bento.new(window.pages.home.general.Quick,{
+			Gap = 6,
+			RightPadding = 20,
+			TweenTime = 0.35
+		})
+
+		-- optional manual rows
+		local row1 = layout:NewRow()
+		local row2 = layout:NewRow()
+		local row3 = layout:NewRow()
+
+		layout:AddItem(window.pages.home.general.Quick.QuickPlay,nil,row1)
+		layout:AddItem(window.pages.home.general.Quick.Player,nil,row1)
+		layout:AddItem(window.pages.home.general.Quick.Latency,nil,row3)
+
+		layout:AddItem(
+			window.pages.home.general.Quick.QuickSettings,
+			{Bottom = true},
+			row2
+		)
+
+
+		layout:Bind()
+		layout:Update()
+
+
+		local Stats = game:GetService("Stats")
+		local TweenService = game:GetService("TweenService")
+
+		local graph = window.pages.home.general.Quick.Latency.Frame:WaitForChild("graph")
+
+		local pointTemplate = graph:WaitForChild("point")
+		local lineTemplate = graph:WaitForChild("line")
+
+		pointTemplate.Visible = false
+		lineTemplate.Visible = false
+
+		local UPDATE_INTERVAL = 0.3
+		local MAX_POINTS = 15
+		local MAX_PING = 300
+
+		local SMOOTH_SPEED = 0.25
+
+		local history = {}
+		local smoothHistory = {}
+
+		local points = {}
+		local lines = {}
+		local gridBuilt = false
+
+		local graphWait = 0
+		repeat
+			task.wait()
+			graphWait += 1
+		until guiAbsSize(graph).X > 0 or graphWait > 120
+
+
+		local Players = game:GetService("Players")
+		local RunService = game:GetService("RunService")
+
+		local function getPing()
+
+			local ping =
+				Players.LocalPlayer:GetNetworkPing() * 1000
+
+			if ping == 0 and RunService:IsStudio() then
+
+				return 50 + math.noise(os.clock()*0.5)*40
+
+			end
+
+			return math.floor(ping)
+
+		end
+
+
+
+		local function clear()
+
+			for _,obj in ipairs(graph:GetChildren()) do
+
+				if obj ~= pointTemplate
+					and obj ~= lineTemplate then
+
+					obj:Destroy()
+
+				end
+
+			end
+
+		end
+
+
+		local function createGrid()
+
+			local w = guiAbsSize(graph).X
+			local h = guiAbsSize(graph).Y
+
+			local steps = 4
+
+			for i=0,steps do
+
+				local percent = i/steps
+				local y = h - (percent*h)
+
+				local gridLine = Instance.new("Frame")
+				gridLine.Size = UDim2.fromOffset(w,1)
+				gridLine.Position = UDim2.fromOffset(34,y)
+				gridLine.BackgroundTransparency = 0.85
+				gridLine.BorderSizePixel = 0
+				gridLine.Parent = graph
+
+
+				local label = Instance.new("TextLabel")
+				label.Size = UDim2.fromOffset(40,14)
+				label.Position = UDim2.fromOffset(2,y-7)
+
+				label.BackgroundTransparency = 1
+				label.TextSize = 6
+				label.TextXAlignment = Enum.TextXAlignment.Left
+				label.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+				label.Text =
+					math.floor(percent*MAX_PING)
+					.." ms"
+
+				label.TextTransparency = 0
+
+				label.Parent = graph
+
+			end
+
+		end
+
+
+
+		local function draw()
+
+			clear()
+			createGrid()
+
+			local w = guiAbsSize(graph).X
+			local h = guiAbsSize(graph).Y
+
+			local step = w/(MAX_POINTS-1)
+
+			local lastX,lastY
+
+			for i,value in ipairs(smoothHistory) do
+
+				local percent =
+					math.clamp(value/MAX_PING,0,1)
+
+				local x = (i-1)*step
+				local y = h - (percent*h)
+
+
+				local point = pointTemplate:Clone()
+				point.Visible = false
+				point.Position = UDim2.fromOffset(x,y)
+				point.AnchorPoint = Vector2.new(0.5,0.5)
+
+				point.Parent = graph
+
+
+				if lastX then
+
+					local dx = x-lastX
+					local dy = y-lastY
+
+					local length =
+						math.sqrt(dx*dx + dy*dy)
+
+					local angle =
+						math.deg(math.atan2(dy,dx))
+
+					local midX = (lastX + x)/2
+					local midY = (lastY + y)/2
+
+					local line = lineTemplate:Clone()
+
+					line.Visible = true
+					line.AnchorPoint = Vector2.new(0.5,0.5)
+
+					line.Position =
+						UDim2.fromOffset(midX,midY)
+
+					line.Size =
+						UDim2.fromOffset(length,1)
+
+					line.Rotation = angle
+
+					line.Parent = graph
+
+				end
+
+
+				lastX = x
+				lastY = y
+
+			end
+
+		end
+
+
+
+		task.spawn(function()
+			while true do
+
+				local ping = getPing()
+				-- replace with getPing() when ready
+
+				table.insert(history,ping)
+
+				if #history > MAX_POINTS then
+					table.remove(history,1)
+				end
+
+
+				-- smooth values
+				for i,v in ipairs(history) do
+
+					local current =
+						smoothHistory[i] or v
+
+					smoothHistory[i] =
+						current + (v-current)*SMOOTH_SPEED
+
+				end
+
+
+				draw()
+
+				task.wait(UPDATE_INTERVAL)
+
+			end
+		end)
+
+		local bh = window.pages.home.general.Quick.QuickSettings.QuickButtons.holder
+
+		for i,v in ipairs(window.pages.home.general.Quick.QuickSettings.QuickButtons.holder:GetChildren()) do
+			if v:IsA('Frame') then
+				v.MouseEnter:Connect(function()
+					tweenservice:Create(v.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+				end)
+
+				v.MouseLeave:Connect(function()
+					tweenservice:Create(v.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+				end)
+			end
+		end
+
+		bh.Leave.interact.MouseButton1Click:Connect(function()
+
+			game:GetService("Players").LocalPlayer:Kick("Left the experience")
+
+		end)
+
+		bh.Rejoin.interact.MouseButton1Click:Connect(function()
+
+			local TeleportService = game:GetService("TeleportService")
+			local player = game:GetService("Players").LocalPlayer
+
+			TeleportService:Teleport(game.PlaceId, player)
+
+		end)
+
+		local HttpService = game:GetService("HttpService")
+		local TeleportService = game:GetService("TeleportService")
+		local Players = game:GetService("Players")
+
+		local player = Players.LocalPlayer
+
+		local placeId = game.PlaceId
+
+		-- Cross-executor HTTP GET. game:HttpGet is not present in every
+		-- executor environment (the "HttpGet is not a valid member of
+		-- DataModel" error), so prefer the executor request functions and
+		-- only fall back to game:HttpGet when nothing else is available.
+		local httpRequest = (syn and syn.request)
+			or (http and http.request)
+			or http_request
+			or request
+
+		local function httpGet(url)
+			if httpRequest then
+				local response = httpRequest({ Url = url, Method = "GET" })
+				return response and response.Body
+			end
+			return game:HttpGet(url)
+		end
+
+		local function ServerHop()
+
+			local cursor = ""
+
+			local servers = {}
+
+			repeat
+
+				local url =
+					"https://games.roblox.com/v1/games/"
+					..placeId..
+					"/servers/Public?sortOrder=Asc&limit=100&cursor="
+					..cursor
+
+				local ok, response = pcall(function()
+					return HttpService:JSONDecode(httpGet(url))
+				end)
+
+				if not ok or type(response) ~= "table" or not response.data then
+					break
+				end
+
+				for _,server in pairs(response.data) do
+
+					if server.playing < server.maxPlayers
+						and server.id ~= game.JobId then
+
+						table.insert(servers,server.id)
+
+					end
+
+				end
+
+				cursor = response.nextPageCursor
+
+			until cursor == nil or #servers > 0
+
+
+			if #servers > 0 then
+
+				TeleportService:TeleportToPlaceInstance(
+					placeId,
+					servers[math.random(1,#servers)],
+					player
+				)
+
+			end
+
+		end
+
+		bh.Fast.interact.MouseButton1Click:Connect(function()
+
+			ServerHop()
+
+		end)
+		
+		local Players = game:GetService("Players")
+
+		local label = window.pages.home.general.Quick.Player.Frame.TextLabel -- put script inside TextLabel
+
+		local function update()
+
+			local current =
+				#Players:GetPlayers()
+
+			local max =
+				Players.MaxPlayers
+
+			label.Text =
+				current.." / "..max
+
+		end
+
+
+		update()
+
+		Players.PlayerAdded:Connect(update)
+		Players.PlayerRemoving:Connect(update)
+		
+		local QuickPlay = window.pages.home.general.Quick.QuickPlay
+
+		local HttpService = game:GetService("HttpService")
+		local MarketplaceService = game:GetService("MarketplaceService")
+		local TeleportService = game:GetService("TeleportService")
+
+		local FILE = syde.ConfigFolder .. "/last_game.json"
+		local currentPlaceId = game.PlaceId
+		local localPlayer = Players.LocalPlayer
+
+
+		local function SaveLastGame(targetPlaceId)
+			if not syde.ConfigEnabled or not writefile then return end
+
+			local data = {
+				PlaceId = targetPlaceId,
+				Time = os.time(),
+			}
+
+			pcall(function()
+				writefile(FILE, HttpService:JSONEncode(data))
+			end)
+		end
+
+
+		local function LoadLastGame()
+			if not isfile or not isfile(FILE) then return nil end
+
+			local success, result = pcall(function()
+				return HttpService:JSONDecode(readfile(FILE))
+			end)
+
+			if success and type(result) == "table" then
+				return result
+			end
+		end
+
+
+		local function setQuickPlayCard(targetPlaceId)
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfoAsync(targetPlaceId, Enum.InfoType.Asset)
+			end)
+
+			if ok and info then
+				QuickPlay.gtitle.Text = info.Name
+				QuickPlay.thumb.Image =
+					"https://www.roblox.com/asset-thumbnail/image?assetId="
+					.. tostring(targetPlaceId)
+					.. "&width=768&height=432&format=png"
+			else
+				QuickPlay.gtitle.Text = "Place " .. tostring(targetPlaceId)
+			end
+		end
+
+
+		-- Last Execution card always reflects the current place/session.
+		setQuickPlayCard(currentPlaceId)
+		SaveLastGame(currentPlaceId)
+
+		QuickPlay.Resume.interact.MouseButton1Click:Connect(function()
+			TeleportService:Teleport(currentPlaceId, localPlayer)
+		end)
+
+	else
+		window.pages.home.Visible = false
+		window.tabs.Home.homeicon.interact.Interactable = false
+	end
+
+
+
+	function opensettings()
+		window.settings.Visible = true
+		window.dim.Visible = true
+
+		tweenservice:Create(window.settings, TweenInfo.new(0.5, Enum.EasingStyle.Quart), { Size = UDim2.new(0, 360,0, 400)}):Play()
+		tweenservice:Create(window.dim, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.2 }):Play()
+		tweenservice:Create(window.settings.UICorner, TweenInfo.new(0.5, Enum.EasingStyle.Quart), { CornerRadius = UDim.new(0,20)}):Play()
+
+		tweenservice:Create(window.settings, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0}):Play()
+		window.settings.pages.Visible = true
+		window.settings.tabs.Visible = true
+
+		tweenservice:Create(window.settings.top.title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 0}):Play()
+		tweenservice:Create(window.settings.top.separator, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0}):Play()
+		tweenservice:Create(window.settings.top.functions.close, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0}):Play()
+		tweenservice:Create(window.settings.top.functions.close.ImageLabel, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { ImageTransparency = 0}):Play()
+	end
+
+	function closesettings()
+		tweenservice:Create(window.settings, TweenInfo.new(0.35, Enum.EasingStyle.Quart), { Size = UDim2.new(0, 360,0, 150)}):Play()
+		tweenservice:Create(window.dim, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+		tweenservice:Create(window.settings.UICorner, TweenInfo.new(0.35, Enum.EasingStyle.Quart), { CornerRadius = UDim.new(0, 90)}):Play()
+
+		tweenservice:Create(window.settings, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+		window.settings.pages.Visible = false
+		window.settings.tabs.Visible = false
+
+		tweenservice:Create(window.settings.top.title, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { TextTransparency = 1}):Play()
+		tweenservice:Create(window.settings.top.separator, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+		tweenservice:Create(window.settings.top.functions.close, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1}):Play()
+		tweenservice:Create(window.settings.top.functions.close.ImageLabel, TweenInfo.new(0.35, Enum.EasingStyle.Exponential), { ImageTransparency = 1}):Play()
+		task.wait(0.6)
+		window.settings.Visible = false
+		window.dim.Visible = false
+	end
+
+	if not settingsOpen then
+		closesettings()
+	end
+
+	window.top.functions.settings.interact.MouseButton1Click:Connect(function()
+		if not settingsOpen then
+			settingsOpen = true
+			opensettings()
+		end
+	end)
+
+	window.settings.top.functions.close.interact.MouseButton1Click:Connect(function()
+		if settingsOpen then
+			settingsOpen = false
+			closesettings()
+		end
+	end)
+
+	window.top.functions.mini.interact.MouseButton1Click:Connect(function()
+		if not uiclosed then
+			ToggleUI()
+		end
+	end)
+
+	--[[
+	
+	 ______     ______     ______   ______   __     __   __     ______     ______    
+	/\  ___\   /\  ___\   /\__  _\ /\__  _\ /\ \   /\ "-.\ \   /\  ___\   /\  ___\   
+	\ \___  \  \ \  __\   \/_/\ \/ \/_/\ \/ \ \ \  \ \ \-.  \  \ \ \__ \  \ \___  \  
+ 	 \/\_____\  \ \_____\    \ \_\    \ \_\  \ \_\  \ \_\\"\_\  \ \_____\  \/\_____\ 
+ 	  \/_____/   \/_____/     \/_/     \/_/   \/_/   \/_/ \/_/   \/_____/   \/_____/ 
+                                                                                 
+	@@Settings
+	]]
+
+
+	do
+		local settings = {}
+
+		local tbdata = {
+			first = false,
+			selected = false
+		}
+
+		function settings:inittab(tab)
+			local telement = {}
+			local tdata = {
+				Title = tab.Title
+			}
+
+			local tabsContainer = window.settings.tabs.ScrollingFrame
+			local pagesContainer = window.settings.pages
+
+			-- === Tab Setup ===
+			local Tab = tabsContainer.tb:Clone()
+			Tab.Visible = true
+			Tab.Parent = tabsContainer
+			Tab.Name = tdata.Title
+			Tab.title.Text = tdata.Title
+
+			-- === Page Setup ===
+			local Page = pagesContainer.page:Clone()
+			Page.Visible = false
+			Page.Parent = pagesContainer
+			Page.Name = tdata.Title
+
+			for _, v in ipairs(Page:GetChildren()) do
+				if v:IsA("Frame") then
+					v:Destroy()
+				end
+			end
+
+			-- === Tween Info ===
+			local bgTween = TweenInfo.new(0.4, Enum.EasingStyle.Exponential)
+			local textTween = TweenInfo.new(0.25, Enum.EasingStyle.Exponential)
+
+			local function ApplyTabStyle(tabButton, selected)
+				tweenservice:Create(tabButton, bgTween, {
+					BackgroundColor3 = selected
+						and Color3.fromRGB(31, 31, 31)
+						or Color3.fromRGB(16, 16, 16)
+				}):Play()
+
+				tweenservice:Create(tabButton.title, textTween, {
+					TextTransparency = selected and 0 or 0.6
+				}):Play()
+			end
+
+			-- === First tab auto-select ===
+			if not tbdata.selectedTab then
+				tbdata.selectedTab = Tab
+				Page.Visible = true
+				ApplyTabStyle(Tab, true)
+			else
+				ApplyTabStyle(Tab, false)
+			end
+
+			-- === Click logic ===
+			Tab.interact.MouseButton1Click:Connect(function()
+				if tbdata.selectedTab == Tab then return end
+
+				-- hide all pages
+				for _, p in ipairs(pagesContainer:GetChildren()) do
+					if p:IsA("ScrollingFrame") then
+						p.Visible = false
+					end
+				end
+
+				-- update tab styles
+				for _, t in ipairs(tabsContainer:GetChildren()) do
+					if t:IsA("Frame") then
+						ApplyTabStyle(t, t == Tab)
+					end
+				end
+
+				Page.Visible = true
+				tbdata.selectedTab = Tab
+			end)
+
+			function telement:Button(Button)
+				local data = {
+					Title = Button.Title or "Temp Button";
+					CallBack = Button.CallBack;
+					Desc = Button.Description or "";
+					Type = Button.Type or 'Default';
+					HoldTime = Button.HoldTime or 3;
+				}
+
+				local button = window.settings.pages.page.Button:Clone()
+				button.Visible = true
+				button.Parent = Page
+				button.title.Text = data.Title
+				button.Name = data.Title
+				button.title.Size = UDim2.new(0, button.title.TextBounds.X + 15,0, 35)
+
+				local c
+
+				c = data.CallBack
+
+
+				local fOTween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+				local fITween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+
+				if data.Type == 'Default' then
+					-- UI Stroke effect on button press
+
+					button.interact.MouseButton1Down:Connect(function()
+						tweenservice:Create(button.UIStroke, fOTween, { Transparency = 1 }):Play()
+						tweenservice:Create(button.ImageLabel, fOTween, { ImageTransparency = 1 }):Play()
+						tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+					end)
+
+					button.interact.MouseButton1Up:Connect(function()
+						tweenservice:Create(button.UIStroke, fITween, { Transparency = 0 }):Play()
+						tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+
+
+					end)
+
+					button.interact.MouseButton1Click:Connect(function()
+						if data.CallBack then
+							local success, errorMsg = pcall(c)
+							if not success then
+								syde:Report("Button '" .. button.Name .. "' callback", errorMsg)
+
 							end
-							local part = target.part
-							local prompt = target.prompt
-							if part and part.Parent and prompt and prompt.Parent then
-								local targetPos = part.Position
-								moveClaimToPosition(hrp, hum, targetPos)
-								task.wait(0.12)
-								char = localPlayer.Character
-								hrp = char and char:FindFirstChild("HumanoidRootPart")
-								hum = char and char:FindFirstChildOfClass("Humanoid")
-								if claimrunning and hrp then
-									claimSeedPrompt(prompt)
-									task.wait(0.25)
+						else
+							warn(`[ CallBack Missing: { button.Name } ] No Function Assigned`)
+						end
+					end)
+
+					-- Extra Check 
+					button.interact.MouseLeave:Connect(function()
+						tweenservice:Create(button.UIStroke, fITween, { Transparency = 0 }):Play()
+						tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+					end)
+				elseif data.Type == 'Hold' then
+					local HoldTime = data.HoldTime
+					local Holding = false
+					local TimeLeft = HoldTime
+					local Complete = false
+
+					button.ImageLabel.Image = 'rbxassetid://127075195365098'
+					button.ImageLabel.Rotation = 0
+					button.ImageLabel.Size = UDim2.new(0, 16,0, 16)
+					button.ImageLabel.Position = UDim2.new(1, -41,0.5, 0)
+
+					local function CancelOperation()
+						Holding = false
+						tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+						tweenservice:Create(button.title.timer, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+						if not Complete then
+							tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 1 }):Play()
+							tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(1, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+							tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,-15 ,0 ,button.Position.Y.Offset) }):Play()
+							task.wait(0.15)
+							tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,30 ,0 ,button.Position.Y.Offset) }):Play()
+							task.wait(0.15)
+							tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,0 ,0 ,button.Position.Y.Offset) }):Play()
+							task.wait(1)
+							tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0 }):Play()
+						end
+
+						-- did not complete 
+
+						--	button.UIStroke.UIGradient.Offset = Vector2.new(-1, 0)
+						--	tweenservice:Create(button.UIStroke, TweenInfo.new(HoldTime, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+
+						TimeLeft = HoldTime
+						button.title.timer.Text = tostring(HoldTime)
+						task.wait(0.1)
+						Complete = false
+					end
+
+					button.interact.MouseButton1Down:Connect(function()
+
+						Holding = true
+						TimeLeft = HoldTime
+						button.title.timer.Text = tostring(TimeLeft)
+						tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+						tweenservice:Create(button.title.timer, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+						tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(HoldTime, Enum.EasingStyle.Linear), { Offset = Vector2.new(0.7, 0) }):Play()
+						tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0}):Play()
+
+						-- Countdown loop
+						while Holding and TimeLeft > 0 do
+							TimeLeft = math.max(0, TimeLeft - runservice.Heartbeat:Wait())
+							button.title.timer.Text = string.format("%.1f", TimeLeft) 
+
+						end
+
+						if TimeLeft <= 0 then
+							Complete = true
+
+							if data.CallBack then
+								local success, errorMsg = pcall(data.CallBack)
+								if not success then
+									syde:Report("Element callback", errorMsg)
+								end
+							else
+								warn("[CALLBACK MISSING]: No Function Assigned To", data.Title)
+							end
+
+							tweenservice:Create(button, TweenInfo.new(0.34, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.fromRGB(24, 24, 24) }):Play()
+							tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(0.1, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+							task.wait(0.34)
+							tweenservice:Create(button, TweenInfo.new(0.34, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.fromRGB(17, 17, 17) }):Play()
+						end
+					end)
+
+					button.interact.MouseButton1Up:Connect(function()
+						CancelOperation()
+					end)
+
+					button.interact.MouseLeave:Connect(function()
+						if Holding then
+							CancelOperation()
+						end
+					end)
+				end
+
+				--[DESC]
+				local descLabel = button:FindFirstChild("desc")
+
+				if descLabel then
+					if data.Desc and data.Desc ~= "" then
+						descLabel.Text = data.Desc
+						descLabel.Visible = true
+						descLabel.TextWrapped = true
+						bindDescLabelResize(descLabel, button, 10)
+					else
+						descLabel.Visible = false
+					end
+				end
+
+			end
+
+			function telement:Toggle(Toggle)
+				local data = {
+					Title = Toggle.Title or "Temp Toggle";
+					Desc = Toggle.Description or "";
+					V = Toggle.Value or false;
+					Config = Toggle.Config or false;
+					CallBack = Toggle.CallBack;
+					SFlag = Toggle.SFlag;
+					SettingsConfig = true;
+				}
+
+				local toggle = window.settings.pages.page.Toggle:Clone()
+				toggle.Visible = true
+				toggle.Parent = Page
+				toggle.title.Text = data.Title
+				toggle.Name = data.Title
+
+
+				local toggleConfiguration = ui.Render.ToggleConfiguration:Clone()
+				toggleConfiguration.Parent = ui.Render
+				toggleConfiguration.Visible = false
+
+				toggleConfiguration.Container.KeyBind.Bind.v.Text = 'None'
+				tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Size = UDim2.new(0, toggleConfiguration.Container.KeyBind.Bind.v.TextBounds.X + 20,0, 25) }):Play()
+
+				toggleConfiguration.BackgroundTransparency = 1
+				toggleConfiguration.Container.KeyBind.Title.TextTransparency = 1
+				toggleConfiguration.Container.KeyBind.Bind.BackgroundTransparency = 1
+				toggleConfiguration.Container.KeyBind.Bind.v.TextTransparency = 1
+				toggleConfiguration.Container.Clear.Title.TextTransparency = 1
+				toggleConfiguration.Container.Clear.clear.ImageLabel.ImageTransparency = 1
+				toggleConfiguration.Size = UDim2.new(0, 75,0, 53)
+
+				if not data.Config then
+					toggle.configure:Destroy()
+				end
+
+				local toggleTween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+				local fadeTween = TweenInfo.new(0.57, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
+
+				local function UpdateToggleUI(state)
+					local targetColor = state and syde.theme.HitBox or Color3.fromRGB(28, 28, 28)
+					local strokeTransparency = state and 1 or 0
+					local checkTransparency = state and 0 or 1
+					local gradientTransparency = state and 0 or 1
+					local glowTransparency = state and 0.7 or 1
+					local textTransparency = state and 0 or 0.5
+
+					tweenservice:Create(toggle.tog, toggleTween, { BackgroundColor3 = targetColor }):Play()
+					--	tweenservice:Create(toggle.tog.UIStroke, toggleTween, { Transparency = strokeTransparency }):Play()
+					tweenservice:Create(toggle.tog.check, toggleTween, { ImageTransparency = checkTransparency }):Play()
+					tweenservice:Create(toggle.tog.gradfr, fadeTween, { BackgroundTransparency = gradientTransparency }):Play()
+					tweenservice:Create(toggle.tog.glow, toggleTween, { ImageTransparency = glowTransparency }):Play()
+					tweenservice:Create(toggle.tog.glow, toggleTween, { ImageColor3 = targetColor }):Play()
+					tweenservice:Create(toggle.title, toggleTween, { TextTransparency = textTransparency }):Play()
+				end
+
+				UpdateToggleUI(data.V)
+
+				toggle.interact.MouseButton1Click:Connect(function()
+					data.V = not data.V
+					UpdateToggleUI(data.V)
+
+					local success, errorMsg = pcall(function()
+						if data.CallBack then
+							data.CallBack(data.V)
+						end
+					end)
+
+					if not success then
+						syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
+					end
+				end)
+
+				--[DESC]
+				local descLabel = toggle:FindFirstChild("desc")
+
+				if descLabel then
+					if data.Desc and data.Desc ~= "" then
+						descLabel.Text = data.Desc
+						descLabel.Visible = true
+						descLabel.TextWrapped = true
+						bindDescLabelResize(descLabel, toggle, 10)
+					else
+						descLabel.Visible = false
+					end
+				end
+
+
+				-- [CONFIGURATIPON]
+				if data.Config then
+
+					local State = false
+
+					local enterTween = TweenInfo.new(0.5, Enum.EasingStyle.Exponential)
+
+					toggle.configure.MouseEnter:Connect(function()
+						tweenservice:Create(toggle.configure, enterTween, { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+					end)
+
+					toggle.configure.MouseLeave:Connect(function()
+						tweenservice:Create(toggle.configure, enterTween, { ImageColor3 = Color3.fromRGB(104, 104, 104) }):Play()
+					end)
+
+					local function ToggleConfigOpen()
+						toggleConfiguration.Visible = true
+						State = true
+
+						tweenservice:Create(toggleConfiguration, enterTween, { BackgroundTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Title, enterTween, { TextTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, enterTween, { BackgroundTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.UIStroke, enterTween, { Transparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, enterTween, { TextTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, enterTween, { ImageTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.Clear.Title, enterTween, { TextTransparency = 0 }):Play()
+						tweenservice:Create(toggleConfiguration, TweenInfo.new(0.7, Enum.EasingStyle.Quint), { Size = UDim2.new(0, 174,0, 88) }):Play()
+						--	tweenservice:Create(toggleConfiguration.shadow.ImageLabel, enterTween, { ImageTransparency = 0.57 }):Play()
+
+					end
+
+					local function ToggleConfigClose()
+						State = false
+
+						tweenservice:Create(toggleConfiguration, enterTween, { BackgroundTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Title, enterTween, { TextTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, enterTween, { BackgroundTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.UIStroke, enterTween, { Transparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, enterTween, { TextTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, enterTween, { ImageTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration.Container.Clear.Title, enterTween, { TextTransparency = 1 }):Play()
+						tweenservice:Create(toggleConfiguration, TweenInfo.new(0.7, Enum.EasingStyle.Quint), { Size = UDim2.new(0, 75,0, 53) }):Play()
+						--	tweenservice:Create(toggleConfiguration.shadow.ImageLabel, enterTween, { ImageTransparency = 1 }):Play()
+						task.wait(0.5)
+
+						toggleConfiguration.Visible = false
+
+					end
+
+					local TogService
+					local heldKeys = {} 
+					local debounce1 = false
+
+					local function ToggleConfig()
+						if debounce1 then return end
+						debounce1 = true
+
+						if not toggleConfiguration.Visible then
+							TogService = runservice.RenderStepped:Connect(function()
+								toggleConfiguration:TweenPosition(UDim2.new(0,toggle.configure.AbsolutePosition.X - 190,0,toggle.configure.AbsolutePosition.Y + toggle.configure.AbsoluteSize.Y + 65), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+								if not toggleConfiguration.Visible then
+									TogService:Disconnect()
+								end
+							end)
+							ToggleConfigOpen()
+						else
+							if TogService then TogService:Disconnect() end
+							ToggleConfigClose()
+						end
+
+						task.delay(0.4, function()
+							debounce1 = false
+						end)
+					end
+
+					toggle.configure.MouseButton1Click:Connect(function()
+						ToggleConfig()
+					end)
+
+					local function ResizeBindFrame()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Size = UDim2.new(0, toggleConfiguration.Container.KeyBind.Bind.v.TextBounds.X + 20,0, 25) }):Play()
+					end
+
+					local function setKeybind(key)
+						if not key then
+							toggleConfiguration.Container.KeyBind.Bind.v.Text = 'None'
+							ResizeBindFrame()
+							data.Keybind = nil
+						else
+							data.Keybind = key
+							data.KeybindReady = false
+
+							tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+							toggleConfiguration.Container.KeyBind.Bind.v.Text = key.Name
+							tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+							ResizeBindFrame()
+
+							task.delay(0.5, function()
+								data.KeybindReady = true
+							end)
+						end
+					end
+
+					toggleConfiguration.Container.KeyBind.Interact.MouseButton1Click:Connect(function()
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+						task.wait(0.2)
+						toggleConfiguration.Container.KeyBind.Bind.v.Text = "..."
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+						ResizeBindFrame()
+
+
+						local connection
+						connection = userinput.InputBegan:Connect(function(input, processed)
+							if not userinput:GetFocusedTextBox() and syde:IsBindableInput(input) then
+								setKeybind(input.KeyCode)
+								connection:Disconnect()
+							end
+						end)
+					end)
+
+					userinput.InputBegan:Connect(function(input, processed)
+						if not userinput:GetFocusedTextBox() and data.Keybind and data.KeybindReady and input.KeyCode == data.Keybind then
+							data.V = not data.V
+							UpdateToggleUI(data.V)
+
+							if data.CallBack then
+								local success, errorMsg = pcall(function()
+									data.CallBack(data.V)
+								end)
+								if not success then
+									syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
 								end
 							end
 						end
-					elseif claimAutoReturn and returnCF and hrp and hum then
-						moveClaimToPosition(hrp, hum, returnCF.Position)
-						returnCF = nil
-					end
-					cleanupClaimMovement(hrp, hum)
-					task.wait(claimLoopDelay)
-				end
-				local endChar = localPlayer.Character
-				cleanupClaimMovement(
-					endChar and endChar:FindFirstChild("HumanoidRootPart"),
-					endChar and endChar:FindFirstChildOfClass("Humanoid")
-				)
-			end)
-		end
-	end,
-	opts = {
-		{type = "dropdown", label = "Move Mode", value = "Teleport", list = {"Teleport", "Fly"}, callback = function(value)
-			claimMoveMode = value
-		end},
-		{type = "slider", label = "Fly Speed", value = 80, min = 10, max = 250, suffix = " studs/s", callback = function(value)
-			claimspeed = value
-		end},
-		{type = "slider", label = "Loop Delay", value = 4, min = 0, max = 30, suffix = " ds", callback = function(value)
-			claimLoopDelay = value / 10
-		end},
-		{type = "checkbox", label = "Return When Idle", value = true, callback = function(value)
-			claimAutoReturn = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-			claimSeedFilterType = value
-		end},
-		{type = "multiselect", label = "Event Seeds", value = "Gold Seed,Rainbow Seed,Mega Seed", list = gameLists.eventSeeds, callback = function(value)
-			claimSeedFilter = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "eventSeeds")
-		end},
-	}
-})
+					end)
 
-local dropClaimRunning = false
-local dropClaimMoveMode = "Teleport"
-local dropClaimAutoReturn = true
-local dropClaimLoopDelay = 0.25
-local dropClaimFilter = ""
-local dropClaimFilterType = "Whitelist"
-local dropClaimMaxDistance = 200
-local dropTypeList = {"Fruits", "Seeds", "Gears", "Cosmetics", "Crates", "Seed Packs", "Pets", "Other"}
+					local debounce2 = false
 
-local function canPickupDropModel(model)
-	if not model or not model:IsA("Model") or not model.Parent then
-		return false
-	end
-	if model:GetAttribute("OwnerRestricted") == true and model:GetAttribute("DroppedBy") ~= localPlayer.UserId then
-		return false
-	end
-	return true
-end
+					toggleConfiguration.Container.Clear.Interact.MouseButton1Click:Connect(function()
+						if debounce2 then return end
+						debounce2 = true
 
-local function collectPickupDrops(hrp)
-	if not hrp then
-		return {}
-	end
-	local folder = workspace:FindFirstChild("DroppedItems")
-	if not folder then
-		return {}
-	end
-	local drops = {}
-	for _, model in folder:GetChildren() do
-		if canPickupDropModel(model) then
-			local prompt, anchor = getDropPickupTarget(model)
-			if prompt and prompt.Enabled ~= false then
-				local pos = nil
-				if anchor and anchor:IsA("BasePart") then
-					pos = anchor.Position
-				else
-					pos = getModelPosition(model)
-				end
-				if pos then
-					local dist = (hrp.Position - pos).Magnitude
-					if dist <= dropClaimMaxDistance then
-						local dropType, dropName = classifyWorldDrop(model)
-						if csvMatchesFilter(dropClaimFilter, dropType, dropClaimFilterType) then
-							table.insert(drops, {
-								model = model,
-								prompt = prompt,
-								anchor = anchor,
-								pos = pos,
-								type = dropType,
-								name = dropName,
-								label = dropType .. " · " .. tostring(dropName),
-								dist = dist,
-							})
+						setKeybind(nil)
+
+						local function blink()
+							tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = 13 }):Play()
+							task.wait(0.2)
+							tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = -13 }):Play()
+							task.wait(0.2)
+							tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = 0 }):Play()
 						end
-					end
-				end
-			end
-		end
-	end
-	table.sort(drops, function(a, b)
-		return a.dist < b.dist
-	end)
-	return drops
-end
 
-local function cleanupDropClaimMovement(hrp, hum)
-	if hum then
-		hum.PlatformStand = false
-	end
-	if hrp then
-		local bv = hrp:FindFirstChild("DropClaimBV")
-		if bv then
-			bv:Destroy()
-		end
-		local bg = hrp:FindFirstChild("DropClaimBG")
-		if bg then
-			bg:Destroy()
-		end
-	end
-end
+						blink()
 
-local function moveDropClaimToPosition(hrp, hum, targetPos, runningFlag)
-	if not hrp or not targetPos then
-		return false
-	end
-	if dropClaimMoveMode == "Teleport" then
-		return safeTeleport(CFrame.new(targetPos))
-	end
-	local dist = (targetPos - hrp.Position).Magnitude
-	if dist < 3 then
-		return true
-	end
-	local duration = math.max(0.12, dist / math.max(claimspeed, 10))
-	if hum then
-		hum.PlatformStand = true
-	end
-	local bv = hrp:FindFirstChild("DropClaimBV") or Instance.new("BodyVelocity")
-	bv.Name = "DropClaimBV"
-	bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-	bv.Parent = hrp
-	local bg = hrp:FindFirstChild("DropClaimBG") or Instance.new("BodyGyro")
-	bg.Name = "DropClaimBG"
-	bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-	bg.Parent = hrp
-	local tween = TS:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-	local done = false
-	local conn = tween.Completed:Connect(function()
-		done = true
-	end)
-	tween:Play()
-	while not done and runningFlag() do
-		task.wait(0.05)
-	end
-	conn:Disconnect()
-	cleanupDropClaimMovement(hrp, hum)
-	return runningFlag()
-end
-
-local function tryPickupDrop(drop)
-	if not drop or not drop.prompt or not drop.prompt.Parent then
-		return false
-	end
-	local prompt = drop.prompt
-	local oldHold = prompt.HoldDuration
-	prompt.HoldDuration = 0
-	firePrompt(prompt)
-	prompt.HoldDuration = oldHold
-	task.wait(0.12)
-	return not (drop.model and drop.model.Parent)
-end
-
-hub:CreateModule("Main", {
-	name = "Auto Claim Drops",
-	on = false,
-	bind = "None",
-	desc = "Pick up world drops.",
-	callback = function(enabled)
-		dropClaimRunning = enabled
-		if enabled then
-			task.spawn(function()
-				local returnCF = nil
-				while dropClaimRunning do
-					local char = localPlayer.Character
-					local hrp = char and char:FindFirstChild("HumanoidRootPart")
-					local hum = char and char:FindFirstChildOfClass("Humanoid")
-					local drops = collectPickupDrops(hrp)
-					if hrp and #drops > 0 then
-						if not returnCF then
-							returnCF = hrp.CFrame
-						end
-						for _, drop in drops do
-							if not dropClaimRunning then
-								break
-							end
-							if not drop.model.Parent then
-								continue
-							end
-							moveDropClaimToPosition(hrp, hum, drop.pos + Vector3.new(0, 1.5, 0), function()
-								return dropClaimRunning
-							end)
-							if tryPickupDrop(drop) then
-								break
-							end
-							task.wait(0.05)
-						end
-					elseif dropClaimAutoReturn and returnCF and hrp then
-						moveDropClaimToPosition(hrp, hum, returnCF.Position, function()
-							return dropClaimRunning
+						task.delay(2, function()
+							debounce2 = false
 						end)
-						returnCF = nil
+					end)
+
+					toggleConfiguration.Container.Clear.MouseEnter:Connect(function()
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.9 }):Play()
+					end)
+
+					toggleConfiguration.Container.Clear.MouseLeave:Connect(function()
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+					end)
+
+				end
+
+				syde:AddConnection(syde.Comms.Event, function(p, color)
+					if p == 'HitBox' then
+						if data.V then
+							task.wait(0.5)
+							toggle.tog.BackgroundColor3 = color
+							toggle.tog.glow.ImageColor3 = color
+						end
 					end
-					cleanupDropClaimMovement(hrp, hum)
-					task.wait(dropClaimLoopDelay)
-				end
-				local endChar = localPlayer.Character
-				cleanupDropClaimMovement(
-					endChar and endChar:FindFirstChild("HumanoidRootPart"),
-					endChar and endChar:FindFirstChildOfClass("Humanoid")
-				)
-			end)
-		end
-	end,
-	opts = {
-		{type = "dropdown", label = "Move Mode", value = "Teleport", list = {"Teleport", "Fly"}, callback = function(value)
-			dropClaimMoveMode = value
-		end},
-		{type = "slider", label = "Fly Speed", value = 80, min = 10, max = 250, suffix = " studs/s", callback = function(value)
-			claimspeed = value
-		end},
-		{type = "slider", label = "Loop Delay", value = 3, min = 0, max = 30, suffix = " ds", callback = function(value)
-			dropClaimLoopDelay = value / 10
-		end},
-		{type = "checkbox", label = "Return When Idle", value = true, callback = function(value)
-			dropClaimAutoReturn = value
-		end},
-		{type = "dropdown", label = "Drop Filter Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-			dropClaimFilterType = value
-		end},
-		{type = "multiselect", label = "Target Drop Types", value = "", list = dropTypeList, callback = function(value)
-			dropClaimFilter = value
-		end},
-	}
-})
-end
-do
-local plantrunning = false
-local plantdelay = 0.1
-local plantpos = "Random"
-local selectedseed = "Carrot"
-local savedPlantPositions = {}
-local plantPosParagraph = nil
-local plantPosListIndex = 1
-local custompos = nil
-local zoneStartPos = nil
-local zoneMin = nil
-local zoneMax = nil
-local selecting = false
-local selectionPart = nil
-local selectionRunConn = nil
-local selectionClickConn = nil
-local selectionKeyConn = nil
-local failedAttempts = 0
-local lastOffset = Vector3.zero
+				end)
 
-local function makePlantPacket(pos, seedName)
-	local netMod = findModule("Networking")
-	local Networking = netMod and safeRequire(netMod)
-	if Networking then
-		local plantMethod = nil
-		for _, category in pairs(Networking) do
-			if typeof(category) == "table" then
-				for name, method in pairs(category) do
-					if typeof(name) == "string" and name:lower():find("plant") and typeof(method) == "table" and method.Serialize then
-						plantMethod = method
-						break
+				function data:Set(NewValue)
+
+					data.V = NewValue
+					UpdateToggleUI(NewValue)
+
+					local success, errorMsg = pcall(function()
+						if data.CallBack then
+							data.CallBack(NewValue)
+						end
+					end)
+
+					if not success then
+						syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
 					end
+
+				end
+
+				if data.SFlag then
+					syde.SettingsFlags[data.SFlag] = data
 				end
 			end
-			if plantMethod then break end
-		end
-		if plantMethod then
-			local ok, paramsBuf = pcall(function() return plantMethod:Serialize(pos, seedName) end)
-			if ok and paramsBuf then
-				local finalBuf = buffer.create(2 + buffer.len(paramsBuf))
-				buffer.writeu16(finalBuf, 0, plantMethod.Id)
-				buffer.copy(finalBuf, 2, paramsBuf, 0, buffer.len(paramsBuf))
-				return finalBuf
-			end
-		end
-	end
-	local plantId = sellev:GetAttribute("Plant")
-		or sellev:GetAttribute("PlantSeed")
-		or sellev:GetAttribute("PlantCrop")
-	if not plantId then
-		for attrName, val in pairs(sellev:GetAttributes()) do
-			if attrName:lower():find("plant") then
-				plantId = val
-				break
-			end
-		end
-	end
-	plantId = plantId or 10
-	local bufLen = 2 + 12 + 1 + #seedName
-	local buf = buffer.create(bufLen)
-	buffer.writeu16(buf, 0, plantId)
-	buffer.writef32(buf, 2, pos.X)
-	buffer.writef32(buf, 6, pos.Y)
-	buffer.writef32(buf, 10, pos.Z)
-	buffer.writeu8(buf, 14, #seedName)
-	for i = 1, #seedName do
-		buffer.writeu8(buf, 14 + i, string.byte(seedName, i))
-	end
-	return buf
-end
 
-local function findSeedTool(seedName)
-	local backpack = localPlayer:FindFirstChild("Backpack")
-	local character = localPlayer.Character
-	local searchName = seedName:lower()
-	if character then
-		for _, child in character:GetChildren() do
-			if child:IsA("Tool") and not child:IsA("Configuration") then
-				local childName = child.Name
-				if not childName:find("%[.-kg%]") then
-					local childNameLower = childName:lower()
-					if childNameLower == searchName or childNameLower:find(searchName, 1, true) then
-						return child
-					end
-				end
-			end
-		end
-	end
-	if backpack then
-		for _, child in backpack:GetChildren() do
-			if child:IsA("Tool") and not child:IsA("Configuration") then
-				local childName = child.Name
-				if not childName:find("%[.-kg%]") then
-					local childNameLower = childName:lower()
-					if childNameLower == searchName or childNameLower:find(searchName, 1, true) then
-						return child
-					end
-				end
-			end
-		end
-	end
-	return nil
-end
+			function telement:Keybind(Keybind)
+				local data = {
+					Title = Keybind.Title;
+					Key = Keybind.Key;
+					Desc = Keybind.Description or "";
+					CallBack = Keybind.CallBack;
+					WaitingForKey = false;
+					Hold = false;
+					Holding = false
+				}
 
-local function formatPlantPosList()
-	if plantpos == "Part" then
-		if #savedPlantPositions == 0 then
-			return "No saved points.\nUse Add Point to place one."
-		end
-		local lines = {}
-		for i, pos in savedPlantPositions do
-			lines[#lines + 1] = string.format("#%d: %.1f, %.1f, %.1f", i, pos.X, pos.Y, pos.Z)
-		end
-		return table.concat(lines, "\n")
-	end
-	if plantpos == "Zone" and zoneMin and zoneMax then
-		return string.format(
-			"Zone saved:\nX %.1f -> %.1f\nZ %.1f -> %.1f",
-			zoneMin.X, zoneMax.X, zoneMin.Z, zoneMax.Z
-		)
-	end
-	if plantpos == "HumanoidRootPart" then
-		return "Plants at player position."
-	end
-	return "Uses random valid soil spots."
-end
+				local KeyBind = window.settings.pages.page.KeyBind:Clone()
+				KeyBind.Visible = true
+				KeyBind.Parent = Page
+				KeyBind.title.Text = data.Title
+				KeyBind.Name = data.Title
 
-local function updatePlantPosDisplay()
-	if plantPosParagraph then
-		setHubParagraph(plantPosParagraph, formatPlantPosList(), "Saved Positions")
-	end
-end
+				KeyBind.Bind.v.Text = data.Key and data.Key.Name or "NONE"
+				tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint ), {Size = UDim2.new(0, KeyBind.Bind.v.TextBounds.X + 30, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
 
-local function getNextPlantPosition(farm)
-	if plantpos == "HumanoidRootPart" then
-		local basePos = getGroundUnderPlayer()
-		if not basePos then
-			return nil
-		end
-		for _ = 1, 10 do
-			local testPos = basePos + lastOffset
-			local projected, isValid = projectToSoil(testPos)
-			if isValid and isPositionInPlantArea(projected) and not isPlantNear(projected, 1.2) then
-				return projected
-			end
-			local angle = math.random() * math.pi * 2
-			local dist = 0.4 + math.random() * 0.8
-			lastOffset = Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
-		end
-		local projected, isValid = projectToSoil(basePos)
-		return isValid and projected or basePos
-	end
-	if plantpos == "Random" then
-		local pos = farm and GetRandomPlantingPosition(farm)
-		if not pos then
-			local cols = getPlantAreaColumns()
-			if #cols > 0 then
-				pos = getRandomPointInColumn(cols[math.random(1, #cols)])
-			end
-		end
-		if pos then
-			local projected, isValid = projectToSoil(pos)
-			if isValid then
-				return projected
-			end
-		end
-		return pos
-	end
-	if plantpos == "Part" then
-		if #savedPlantPositions == 0 then
-			return nil
-		end
-		for _ = 1, #savedPlantPositions do
-			local entry = savedPlantPositions[plantPosListIndex]
-			plantPosListIndex = plantPosListIndex + 1
-			if plantPosListIndex > #savedPlantPositions then
-				plantPosListIndex = 1
-			end
-			local projected, isValid = projectToSoil(entry)
-			if isValid and not isPlantNear(projected, 1.2) then
-				return projected
-			end
-		end
-		return nil
-	end
-	if plantpos == "Zone" then
-		for _ = 1, 12 do
-			local pos = getRandomPointInZone(zoneMin, zoneMax)
-			if pos and not isPlantNear(pos, 1.2) then
-				return pos
-			end
-		end
-	end
-	return nil
-end
+				KeyBind.interact.MouseButton1Click:Connect(function()
+					KeyBind.Bind.v.Text = '...'
+					tweenservice:Create(KeyBind.Bind.UIStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Thickness = 1}):Play()
+					data.WaitingForKey = true
+				end)
 
-local function cleanupSelection()
-	if selectionClickConn then selectionClickConn:Disconnect() selectionClickConn = nil end
-	if selectionRunConn then selectionRunConn:Disconnect() selectionRunConn = nil end
-	if selectionKeyConn then selectionKeyConn:Disconnect() selectionKeyConn = nil end
-	if selectionPart then
-		selectionPart:Destroy()
-		selectionPart = nil
-	end
-	zoneStartPos = nil
-	local mouse = localPlayer:GetMouse()
-	if mouse.TargetFilter == selectionPart then
-		mouse.TargetFilter = nil
-	end
-	selecting = false
-end
+				KeyBind.Bind.v:GetPropertyChangedSignal('TextBounds'):Connect(function()
+					tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint ), {Size = UDim2.new(0, KeyBind.Bind.v.TextBounds.X + 30, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
+				end)
 
-local function startPlantPositionSelection()
-	if selecting then
-		cleanupSelection()
-		hub:Notify("Selection cancelled.")
-		return
-	end
-	if plantpos ~= "Part" and plantpos ~= "Zone" then
-		hub:Notify("Switch Plant Mode to Part or Zone first.")
-		return
-	end
-	selecting = true
-	zoneStartPos = nil
-	local mouse = localPlayer:GetMouse()
-	local part = Instance.new("Part")
-	part.Size = Vector3.new(2, 0.4, 2)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = false
-	part.Material = Enum.Material.Neon
-	part.Transparency = 0.35
-	part.Parent = workspace
-	selectionPart = part
-	mouse.TargetFilter = part
-	local hl = Instance.new("Highlight")
-	hl.FillTransparency = 0.45
-	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-	hl.OutlineTransparency = 0
-	hl.Adornee = part
-	hl.Parent = part
-	selectionRunConn = RS.RenderStepped:Connect(function()
-		if not part.Parent then
-			cleanupSelection()
-			return
-		end
-		local projected, isValid = projectToSoil(mouse.Hit.Position)
-		if plantpos == "Zone" and zoneStartPos then
-			local snapGrid = 2
-			local startX = math.round(zoneStartPos.X / snapGrid) * snapGrid
-			local startZ = math.round(zoneStartPos.Z / snapGrid) * snapGrid
-			local currX = math.round(projected.X / snapGrid) * snapGrid
-			local currZ = math.round(projected.Z / snapGrid) * snapGrid
-			local minX = math.min(startX, currX) - 1
-			local maxX = math.max(startX, currX) + 1
-			local minZ = math.min(startZ, currZ) - 1
-			local maxZ = math.max(startZ, currZ) + 1
-			part.Size = Vector3.new(maxX - minX, 3, maxZ - minZ)
-			part.Position = Vector3.new((minX + maxX) / 2, projected.Y + 1.5, (minZ + maxZ) / 2)
-		else
-			if plantpos == "Zone" then
-				part.Size = Vector3.new(0.8, 0.8, 0.8)
-			else
-				part.Size = Vector3.new(2, 0.4, 2)
-			end
-			part.Position = projected
-		end
-		if isValid then
-			part.Color = Color3.fromRGB(80, 220, 100)
-			hl.FillColor = Color3.fromRGB(80, 220, 100)
-		else
-			part.Color = Color3.fromRGB(240, 80, 80)
-			hl.FillColor = Color3.fromRGB(240, 80, 80)
-		end
-	end)
-	selectionClickConn = mouse.Button1Down:Connect(function()
-		local projected, isValid = projectToSoil(mouse.Hit.Position)
-		if plantpos == "Zone" then
-			if not zoneStartPos then
-				local snapGrid = 2
-				zoneStartPos = Vector3.new(
-					math.round(projected.X / snapGrid) * snapGrid,
-					projected.Y,
-					math.round(projected.Z / snapGrid) * snapGrid
-				)
-				hub:Notify("First corner set. Click again to expand zone.")
-			else
-				local snapGrid = 2
-				local startX = math.round(zoneStartPos.X / snapGrid) * snapGrid
-				local startZ = math.round(zoneStartPos.Z / snapGrid) * snapGrid
-				local currX = math.round(projected.X / snapGrid) * snapGrid
-				local currZ = math.round(projected.Z / snapGrid) * snapGrid
-				local minX = math.min(startX, currX) - 1
-				local maxX = math.max(startX, currX) + 1
-				local minZ = math.min(startZ, currZ) - 1
-				local maxZ = math.max(startZ, currZ) + 1
-				zoneMin = Vector3.new(minX, projected.Y, minZ)
-				zoneMax = Vector3.new(maxX, projected.Y + 3, maxZ)
-				cleanupSelection()
-				updatePlantPosDisplay()
-				hub:Notify("Plant zone saved.")
-			end
-		elseif isValid then
-			savedPlantPositions[#savedPlantPositions + 1] = projected
-			custompos = projected
-			cleanupSelection()
-			updatePlantPosDisplay()
-			hub:Notify("Plant point saved.")
-		else
-			hub:Notify("Cannot plant here.")
-		end
-	end)
-	selectionKeyConn = UIS.InputBegan:Connect(function(input, gpe)
-		if gpe then return end
-		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.X then
-			cleanupSelection()
-			hub:Notify("Selection cancelled.")
-		end
-	end)
-end
-
-local function doplant()
-	if selectedseed == "" or selectedseed == "None" then
-		return
-	end
-	local farm = getPlayerFarm()
-	local character = localPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
-	end
-	local seeds = {}
-	for s in string.gmatch(selectedseed, "[^,%s]+") do
-		table.insert(seeds, s)
-	end
-	if #seeds == 0 then return end
-	local tool = nil
-	local chosenSeed = nil
-	local count = 0
-	for _, seedName in seeds do
-		local t = findSeedTool(seedName)
-		if t then
-			local seedCount = 0
-			local bp = localPlayer:FindFirstChildOfClass("Backpack")
-			if bp then
-				local backpackTool = bp:FindFirstChild(t.Name)
-				if backpackTool then
-					local numVal = backpackTool:FindFirstChild("Numbers")
-					seedCount = numVal and numVal.Value or 1
-				end
-			end
-			if seedCount == 0 and t.Parent == character then
-				local numVal = t:FindFirstChild("Numbers")
-				seedCount = numVal and numVal.Value or 1
-			end
-			if seedCount > 0 then
-				tool = t
-				chosenSeed = seedName
-				count = seedCount
-				break
-			end
-		end
-	end
-	if not tool or count <= 0 then
-		return
-	end
-	humanoid:EquipTool(tool)
-	task.wait(0.15)
-	for _ = 1, count do
-		if not plantrunning then break end
-		local pos = getNextPlantPosition(farm)
-		if not pos then
-			break
-		end
-		if plantpos ~= "Random" and not isPositionInPlantArea(pos) then
-			continue
-		end
-		local pkt = makePlantPacket(pos, chosenSeed)
-		pcall(function() sellev:FireServer(pkt, {tool}) end)
-		if plantdelay > 0 then
-			task.wait(plantdelay)
-		end
-	end
-	humanoid:UnequipTools()
-end
-
-hub:CreateModule("Main", {
-	name = "Auto Plant",
-	on = false,
-	bind = "None",
-	desc = "Auto plant seeds.",
-	callback = function(enabled)
-		plantrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while plantrunning do
-					pcall(doplant)
-					task.wait(0.5)
-				end
-			end)
-		else
-			cleanupSelection()
-		end
-	end,
-	opts = {
-		{type = "multiselect", label = "Select Seeds", value = "", list = gameLists.seeds, callback = function(value)
-			selectedseed = value
-		end},
-		{type = "dropdown", label = "Plant Mode", value = "Random", list = {"Random", "HumanoidRootPart", "Part", "Zone"}, callback = function(value)
-			plantpos = value
-			if plantpos ~= "Part" and plantpos ~= "Zone" then
-				cleanupSelection()
-			end
-			updatePlantPosDisplay()
-		end},
-		{type = "paragraph", title = "Saved Positions", content = "Loading...", onCreate = function(widget)
-			plantPosParagraph = widget
-			updatePlantPosDisplay()
-		end},
-		{type = "button", label = "Add Point / Select Zone", callback = startPlantPositionSelection},
-		{type = "button", label = "Clear Saved", callback = function()
-			table.clear(savedPlantPositions)
-			custompos = nil
-			zoneMin = nil
-			zoneMax = nil
-			plantPosListIndex = 1
-			updatePlantPosDisplay()
-			hub:Notify("Saved plant data cleared.")
-		end},
-		{type = "slider", label = "Plant Delay", value = 1, min = 0, max = 50, suffix = " ds", callback = function(value)
-			plantdelay = value / 10
-		end},
-		{type = "button", label = "Plant All Now", callback = function()
-			task.spawn(function()
-				local oldRunning = plantrunning
-				plantrunning = true
-				pcall(doplant)
-				plantrunning = oldRunning
-			end)
-		end},
-	}
-})
-end
-local shovelrunning = false
-local shoveldelay = 0
-local shovelftype = "Whitelist"
-local shovelplantftype = "Whitelist"
-local shovelflist = "None"
-local shovelplantslist = "None"
-local shovelmuttype = "Whitelist"
-local shovelmutlist = "None"
-local shovelminweight = 0
-local shovelmaxweight = 0
-local function shovelplantallowed(seedName)
-	local set = {}
-	for name in (shovelplantslist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if shovelplantslist == "" or shovelplantslist == "None" then
-		if shovelplantftype == "Whitelist" then
-			return false
-		else
-			return true
-		end
-	end
-	if shovelplantftype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-local function shovelallowed(seedName)
-	local set = {}
-	for name in (shovelflist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if shovelftype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-local function shovelmutallowed(mutation)
-	if not mutation or mutation == "" then
-		mutation = "None"
-	end
-	local set = {}
-	for name in (shovelmutlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if shovelmutlist == "" or shovelmutlist == "None" then
-		return true
-	end
-	if shovelmuttype == "Whitelist" then
-		return set[mutation] == true
-	end
-	return set[mutation] == nil
-end
-findShovelTool = function()
-	local function pick(container)
-		if not container then
-			return nil
-		end
-		for _, child in container:GetChildren() do
-			if child:IsA("Tool") and child:GetAttribute("Shovel") then
-				return child
-			end
-		end
-		return nil
-	end
-	local character = localPlayer.Character
-	return pick(character) or pick(localPlayer:FindFirstChild("Backpack"))
-end
-local function fireShovelAction(plant, targetObj, shovel)
-	if not shovel or not shovel.Parent then
-		return false
-	end
-	local netMod = findModule("Networking")
-	local Networking = netMod and safeRequire(netMod)
-	if not Networking or not Networking.Shovel or not Networking.Shovel.UseShovel then
-		return false
-	end
-	local plantId = plant.Name
-	local fruitId = ""
-	if targetObj and targetObj ~= plant and targetObj.Parent and targetObj.Parent.Name == "Fruits" then
-		fruitId = targetObj.Name
-	end
-	local shovelAttr = shovel:GetAttribute("Shovel") or shovel.Name
-	local ok = pcall(function()
-		if Networking.Shovel.SwingShovel then
-			Networking.Shovel.SwingShovel:Fire(shovel)
-		end
-		Networking.Shovel.UseShovel:Fire(plantId, fruitId, shovelAttr, shovel)
-	end)
-	return ok
-end
-local function doshovel()
-	local farm = getPlayerFarm()
-	if not farm then
-		return
-	end
-	local plants = farm:FindFirstChild("Plants")
-	if not plants then
-		return
-	end
-	local character = localPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
-	end
-	local shovel = findShovelTool()
-	if not shovel then
-		return
-	end
-	if shovel.Parent ~= character then
-		humanoid:EquipTool(shovel)
-	end
-	shovel = findShovelTool()
-	if not shovel or shovel.Parent ~= character then
-		return
-	end
-	local children = plants:GetChildren()
-	if #children == 0 then
-		return
-	end
-	for _, plant in children do
-		if not shovelrunning then
-			break
-		end
-		local plantSeedName = getseedname(plant)
-		local plantCropName = plantSeedName and (getcropname(plantSeedName) or plantSeedName) or nil
-		local shovelAsPlant = plantCropName and shovelplantallowed(plantCropName)
-		local fruitsFolder = plant:FindFirstChild("Fruits")
-		local targetsToCheck = {}
-		if shovelAsPlant then
-			table.insert(targetsToCheck, plant)
-		elseif fruitsFolder and #fruitsFolder:GetChildren() > 0 then
-			for _, fruit in fruitsFolder:GetChildren() do
-				table.insert(targetsToCheck, fruit)
-			end
-		else
-			table.insert(targetsToCheck, plant)
-		end
-		for _, obj in targetsToCheck do
-			if not shovelrunning then
-				break
-			end
-			local seedName = getseedname(obj)
-			local cropName = seedName and (getcropname(seedName) or seedName) or nil
-			local mutation = obj:GetAttribute("Mutation") or "None"
-			local calcWeightKg = getweightkg(obj, seedName)
-			if cropName and cropName ~= "" then
-				local isFruit = (obj.Parent and obj.Parent.Name == "Fruits")
-				local allowed = isFruit and shovelallowed(cropName) or shovelplantallowed(cropName)
-				local mutAllowed = shovelmutallowed(mutation)
-				local matchesMin = (shovelminweight == 0 or calcWeightKg >= shovelminweight)
-				local matchesMax = (shovelmaxweight == 0 or calcWeightKg <= shovelmaxweight)
-				if allowed and mutAllowed and matchesMin and matchesMax then
-					fireShovelAction(plant, obj, shovel)
-					if shoveldelay > 0 then
-						task.wait(shoveldelay)
-					end
-				end
-			end
-		end
-	end
-end
-local shovelthread = nil
-hub:CreateModule("Main", {
-	name = "Auto Shovel",
-	on = false,
-	bind = "None",
-	desc = "Auto dig plants.",
-	callback = function(enabled)
-		shovelrunning = enabled
-		if shovelthread then
-			pcall(task.cancel, shovelthread)
-			shovelthread = nil
-		end
-		if enabled then
-			shovelthread = task.spawn(function()
-				while shovelrunning do
-					doshovel()
-					if shoveldelay > 0 then
-						task.wait(shoveldelay)
+				local function SetKeybind(keyCode)
+					if keyCode and keyCode ~= Enum.KeyCode.Unknown then
+						data.Key = keyCode
+						KeyBind.Bind.v.Text = keyCode.Name
+						tweenservice:Create(KeyBind.Bind.UIStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Thickness = 0}):Play()
+						if typeof(Keybind.OnKeyChanged) == "function" then
+							pcall(Keybind.OnKeyChanged, keyCode)
+						end
 					else
+						data.Key = nil
+						KeyBind.Bind.v.Text = "NONE"
+					end
+				end
+
+				-- Main input handler
+				syde:AddConnection(userinput.InputBegan, function(input, processed)
+					if data.WaitingForKey then
+						if syde:IsBindableInput(input) then
+							data.WaitingForKey = false
+							SetKeybind(input.KeyCode)
+						end
+						return
+					end
+
+					-- don't fire the bind while typing in a textbox (ignore processed so
+					-- keys the game also uses, e.g. RightShift shift-lock, still work)
+					if userinput:GetFocusedTextBox() then return end
+					if input.KeyCode == Enum.KeyCode.Unknown then return end
+
+					if input.KeyCode == data.Key then
+						data.Hold = true
+
+						local holdConnection
+						holdConnection = input.Changed:Connect(function(prop)
+							if prop == "UserInputState" then
+								local state = input.UserInputState
+								data.Hold = (state == Enum.UserInputState.Begin)
+								if state == Enum.UserInputState.End and holdConnection then
+									holdConnection:Disconnect()
+								end
+							end
+						end)
+
+						local success, result = pcall(data.CallBack)
+						if not data.Holding then
+							if not success then
+								syde:Report("Keybind '" .. KeyBind.Name .. "' callback", result)
+							end
+						else
+							if data.Hold then
+								local holdLoop
+								holdLoop = runservice.RenderStepped:Connect(function()
+									if not data.Hold then
+										data.CallBack(false)
+										holdLoop:Disconnect()
+									else
+										data.CallBack(false)
+									end
+								end)
+							end
+						end
+					end
+				end)
+			end
+
+			function telement:ColorPicker(ColorPicker)
+				local data = {
+					Title = ColorPicker.Title;
+					Color = ColorPicker.Color;
+					Color2 = ColorPicker.Color2;
+					Linkable = ColorPicker.Linkable;
+					Type = ColorPicker.Type or 'ColorPicker';
+					GradientPath = ColorPicker.GradientPath;
+					CallBack = ColorPicker.CallBack;
+					SFlag = ColorPicker.SFlag;
+				}
+
+				ColorPicker.Linkable = ColorPicker.Linkable or true
+
+				local colorpicker = window.settings.pages.page.ColorPicker:Clone()
+				colorpicker.Visible = true
+				colorpicker.Parent = Page
+				colorpicker.title.Text = data.Title
+				colorpicker.Name = data.Title
+
+				local isLinkable = Instance.new("BoolValue")
+				isLinkable.Name = 'isLinkable'
+				isLinkable.Value = data.Linkable
+				isLinkable.Parent = colorpicker
+
+				local HueSat = Instance.new("Color3Value")
+				HueSat.Name = 'HueSat'
+				HueSat.Value = data.Color
+				HueSat.Parent = colorpicker
+
+
+				local Open = false
+				local DeBounce = false
+				local State = false
+
+				do
+					local HueValues = colorpicker.HueValues
+
+					-- kill UIListLayout if it exists
+					local list = HueValues:FindFirstChildOfClass("UIListLayout")
+					if list then list:Destroy() end
+
+					local ITEMS = {
+						HueValues.HEX,
+						HueValues.RGB,
+						HueValues.Link
+					}
+
+					local GAP = 8
+					local ITEM_HEIGHT = 30
+					local ITEM_WIDTH = 120
+					local HORIZONTAL_THRESHOLD = 260
+
+					local hueLayoutBusy = false
+					local function updateHueValuesLayout()
+						if hueLayoutBusy then
+							return
+						end
+						hueLayoutBusy = true
+						pcall(function()
+							if not HueValues.Visible then return end
+
+							local width = guiAbsSize(HueValues).X
+							local horizontal = width >= HORIZONTAL_THRESHOLD
+
+							local x, y = 0, 0
+							local totalHeight = 0
+
+							for _, item in ipairs(ITEMS) do
+								item.AnchorPoint = Vector2.new(1, 0)
+
+								if horizontal then
+									item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
+									item.Position = UDim2.new(1, -x, 0, 0)
+									x += ITEM_WIDTH + GAP
+									totalHeight = ITEM_HEIGHT
+								else
+									item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
+									item.Position = UDim2.new(1, 0, 0, -y)
+									y += ITEM_HEIGHT + GAP
+									totalHeight = y
+								end
+							end
+
+							HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
+							HueValues.Position = UDim2.new(0.5, 0,1, -50)
+
+							if Open then
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 295 + totalHeight) }
+								):Play()
+							end
+						end)
+						hueLayoutBusy = false
+					end
+
+					safeOnPropertyChanged(HueValues, "Size", updateHueValuesLayout)
+					safeOnPropertyChanged(colorpicker, "Size", updateHueValuesLayout)
+
+					colorpicker:SetAttribute("UpdateHueLayout", true)
+					pcall(function()
+						colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(function()
+							updateHueValuesLayout()
+						end)
+					end)
+
+					task.defer(updateHueValuesLayout)
+				end
+
+
+				colorpicker.color.Values.Hue.BackgroundTransparency = 1
+				colorpicker.color.Values.Hue.Pin.BackgroundTransparency = 1
+				colorpicker.color.Values.Hue.Pin.UIStroke.Transparency = 1
+				colorpicker.color.Values.Rainbow.ImageTransparency = 1
+
+				if data.Type == "Gradient" then
+					colorpicker.color.Values.Grad.BackgroundTransparency = 1
+					colorpicker.color.Values.Grad.Pin1.BackgroundTransparency = 1
+					colorpicker.color.Values.Grad.Pin1.UIStroke.Transparency = 1
+					colorpicker.color.Values.Grad.Pin2.BackgroundTransparency = 1
+					colorpicker.color.Values.Grad.Pin2.UIStroke.Transparency = 1
+				end
+
+				colorpicker.color.SVPicker.Pin.BackgroundTransparency = 1
+				colorpicker.color.SVPicker.Pin.UIStroke.Transparency = 1
+				colorpicker.color.SVPicker.Brightness.BackgroundTransparency = 1
+				colorpicker.color.SVPicker.Saturation.BackgroundTransparency = 1
+
+				colorpicker.HueValues.HEX.BackgroundTransparency = 1
+				colorpicker.HueValues.HEX.UIStroke.Transparency = 1
+				colorpicker.HueValues.HEX.V.HEXBox.TextTransparency = 1
+				colorpicker.HueValues.HEX.Copy.ImageTransparency = 1
+
+				colorpicker.HueValues.RGB.BackgroundTransparency = 1
+				colorpicker.HueValues.RGB.UIStroke.Transparency = 1
+				colorpicker.HueValues.RGB.V.RGBBox.TextTransparency = 1
+				colorpicker.HueValues.RGB.Copy.ImageTransparency = 1
+
+				colorpicker.HueValues.Link.BackgroundTransparency = 1
+				colorpicker.HueValues.Link.UIStroke.Transparency = 1
+				colorpicker.HueValues.Link.Frame.BackgroundTransparency = 1
+				colorpicker.HueValues.Link.Frame.ImageLabel.ImageTransparency = 1
+
+				colorpicker.QuickClose.Interactable = false
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundColor3 = data.Color }):Play()
+
+				local recentContainer = colorpicker.color.Values.Recent
+				local spacing = 5
+				local frameSize = 12 
+
+				local function updateRecentLayout()
+					local children = {} 
+					for _, child in pairs(recentContainer:GetChildren()) do
+						if child:IsA("Frame") then
+							table.insert(children, child)
+						end
+					end
+
+					table.sort(children, function(a, b)
+						return a.LayoutOrder > b.LayoutOrder 
+					end)
+
+					local totalWidth = #children * frameSize + math.max(#children - 1, 0) * spacing
+					local startX = recentContainer.AbsoluteSize.X - totalWidth 
+
+					for _, frame in ipairs(children) do
+						--	frame.Position = UDim2.new(0, startX, 0.5, -frame.Size.Y.Offset / 2)
+						tweenservice:Create(frame, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Position = UDim2.new(0, startX , 0.8, -frame.Size.Y.Offset / 2) }):Play()
+						startX += frameSize + spacing
+					end
+				end
+
+				recentContainer.ChildAdded:Connect(function(child)
+					if child:IsA("Frame") then
+						child.LayoutOrder = os.time() 
+						updateRecentLayout()
+					end
+				end)
+				recentContainer.ChildRemoved:Connect(updateRecentLayout)
+				updateRecentLayout()
+
+				local HSV
+
+				if data.Color then
+					HSV = { data.Color:ToHSV() }
+				else
+
+					HSV = { 0, 0, 0 }
+				end
+				local Selected = data.Color
+				local HueValue = HSV[1]
+
+				local function TableToColor(Table)
+					if type(Table) ~= "table" then return Table end
+					return Color3.fromHSV(Table[1],Table[2],Table[3])
+				end
+
+				local function FormatColor(Color, format, precision)
+
+					format = format or "RGB"
+					precision = precision or 2
+
+					local formattedColor = ""
+
+					if format == "RGB" then
+						return	math.round(Color.R * 255) .. "," .. math.round(Color.G * 255) .. "," .. math.round(Color.B * 255)
+					elseif format == "Hex" then
+						formattedColor = string.format("#%02X%02X%02X",
+							math.round(Color.R * 255),
+							math.round(Color.G * 255),
+							math.round(Color.B * 255)
+						)
+
+						return formattedColor
+					end
+				end
+
+				local SVPicker = colorpicker.color.SVPicker
+				local HUESlider = colorpicker.color.Values.Hue
+
+				SVPicker.Pin.BackgroundColor3 = data.Color
+				HUESlider.Pin.BackgroundColor3 = data.Color
+
+				local Keys
+				local ExternalGradient
+				local ActivePin = 1
+				local GradientFrame = colorpicker.color.Values:FindFirstChild("Grad")
+				local HueFrame = colorpicker.color.Values.Hue
+				local DraggingPin = nil
+
+				local function updatestuff()
+					data.Color = TableToColor(HSV)
+					colorpicker.color.BackgroundColor3 = data.Color
+					colorpicker.color.glow.ImageColor3 = data.Color
+
+					--	colorpicker.color.BackgroundColor3 = Color3.fromHSV(HSV[1], 1, 1)
+					local newColor = Color3.fromHSV(HSV[1], HSV[2], HSV[3])
+					local newColor2 = Color3.fromHSV(HSV[1], 1, 1)
+
+					if data.Type == "Gradient" and Keys and Keys[ActivePin] then
+						Keys[ActivePin] = ColorSequenceKeypoint.new(Keys[ActivePin].Time, newColor)
+
+						Keys[1] = ColorSequenceKeypoint.new(0, Keys[2].Value)
+						Keys[4] = ColorSequenceKeypoint.new(1, Keys[3].Value)
+
+						data.Color  = Keys[2].Value
+						data.Color2 = Keys[3].Value
+
+						local seq = ColorSequence.new(Keys)
+						if ExternalGradient then
+							ExternalGradient.Color = seq
+						end
+						GradientFrame.Gradient.Color = seq
+
+						GradientFrame.Pin1.BackgroundColor3 = data.Color
+						GradientFrame.Pin2.BackgroundColor3 = data.Color2
+					end
+
+
+					HueSat.Value = data.Color
+
+					tweenservice:Create(HUESlider.Pin, TweenInfo.new(0.1, Enum.EasingStyle.Exponential), {BackgroundColor3 = newColor2}):Play()
+					tweenservice:Create(SVPicker.Pin, TweenInfo.new(0.1, Enum.EasingStyle.Exponential), {BackgroundColor3 = newColor}):Play()
+
+
+					tweenservice:Create(SVPicker.Pin, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+						Position = UDim2.new(HSV[2], 0, 1 - HSV[3], 0)
+					}):Play()
+
+					tweenservice:Create(HUESlider.Pin, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+						Position = UDim2.new(1 - HSV[1], 0, 0.5, 0)
+					}):Play()
+
+					local formattedHex = FormatColor(data.Color, 'Hex')
+					colorpicker.HueValues.HEX.V.HEXBox.PlaceholderText = formattedHex
+
+					local formattedRGB = FormatColor(data.Color,'RGB', 2)
+					colorpicker.HueValues.RGB.V.RGBBox.PlaceholderText = formattedRGB
+
+					if data.CallBack then
+						data.CallBack(data.Color)
+					end
+				end
+				updatestuff()
+
+				local newColor = Color3.fromHSV(HSV[1], HSV[2], HSV[3])
+
+				local oldCallback = data.CallBack
+				data.CallBack = function(col)
+					if data.Type ~= "Gradient" then
+						if oldCallback then oldCallback(col) end
+						return
+					end
+
+					table.sort(Keys, function(a,b) return a.Time < b.Time end)
+
+					Keys[1] = ColorSequenceKeypoint.new(0, Keys[2].Value)
+					Keys[4] = ColorSequenceKeypoint.new(1, Keys[3].Value)
+
+					data.Color  = Keys[2].Value
+					data.Color2 = Keys[3].Value
+
+					local seq = ColorSequence.new(Keys)
+					ExternalGradient.Color = seq
+					GradientFrame.Gradient.Color = seq
+
+					if oldCallback then
+						oldCallback(seq, data.Color, data.Color2)
+					end
+				end
+
+
+				if data.Type == "Gradient" then
+					HueFrame.Visible = true
+					GradientFrame.Visible = true
+
+					ExternalGradient = data.GradientPath
+
+					local startCol = data.Color or ExternalGradient.Color.Keypoints[1].Value
+					local endCol = data.Color2 or ExternalGradient.Color.Keypoints[#ExternalGradient.Color.Keypoints].Value
+
+					Keys = {
+						ColorSequenceKeypoint.new(0, startCol),      
+						ColorSequenceKeypoint.new(0.2, startCol),  
+						ColorSequenceKeypoint.new(0.8, endCol),     
+						ColorSequenceKeypoint.new(1, endCol)         
+					}
+
+					ActivePin = 2 
+
+					GradientFrame.Pin1.BackgroundColor3 = startCol
+					GradientFrame.Pin2.BackgroundColor3 = endCol
+				end
+
+				local oldCallback = data.CallBack
+				data.CallBack = function(col)
+					if data.Type ~= "Gradient" then
+						if oldCallback then oldCallback(col) end
+						return
+					end
+
+					table.sort(Keys, function(a,b) return a.Time < b.Time end)
+					Keys[1] = ColorSequenceKeypoint.new(0, Keys[1].Value)
+					Keys[#Keys] = ColorSequenceKeypoint.new(1, Keys[#Keys].Value)
+
+					local seq = ColorSequence.new(Keys)
+					ExternalGradient.Color = seq
+					GradientFrame.Gradient.Color = seq
+
+					if oldCallback then oldCallback(seq) end
+				end
+
+				if data.Type == "Gradient" then
+					local g = GradientFrame
+					local UIS = game:GetService("UserInputService")
+					local RS = game:GetService("RunService")
+					local mouse = game.Players.LocalPlayer:GetMouse()
+
+					local function updateUI()
+						g.Pin1.Position = UDim2.new(Keys[2].Time, 0, 0.5, 0)
+						g.Pin1.BackgroundColor3 = Keys[2].Value
+
+						g.Pin2.Position = UDim2.new(Keys[3].Time, 0, 0.5, 0)
+						g.Pin2.BackgroundColor3 = Keys[3].Value
+
+						local seq = ColorSequence.new(Keys)
+						ExternalGradient.Color = seq
+						g.Gradient.Color = seq
+					end
+
+					g.Pin1.InputBegan:Connect(function(input)
+						if input.UserInputType == Enum.UserInputType.MouseButton1 then
+							DraggingPin = 2
+							ActivePin = 2
+							local h, s, v = Keys[2].Value:ToHSV()
+							HSV[1], HSV[2], HSV[3] = h, s, v
+							updatestuff()
+						end
+					end)
+
+					g.Pin2.InputBegan:Connect(function(input)
+						if input.UserInputType == Enum.UserInputType.MouseButton1 then
+							DraggingPin = 3
+							ActivePin = 3
+							local h, s, v = Keys[3].Value:ToHSV()
+							HSV[1], HSV[2], HSV[3] = h, s, v
+							updatestuff()
+						end
+					end)
+
+					UIS.InputEnded:Connect(function(input)
+						if input.UserInputType == Enum.UserInputType.MouseButton1 then
+							DraggingPin = nil
+						end
+					end)
+
+					RS.Heartbeat:Connect(function()
+						if not DraggingPin then return end
+
+						local relX = (mouse.X - g.AbsolutePosition.X) / g.AbsoluteSize.X
+						relX = math.clamp(relX, 0, 1)
+
+						if DraggingPin == 2 then
+							relX = math.clamp(relX, 0, Keys[3].Time - 0.01) 
+						elseif DraggingPin == 3 then
+							relX = math.clamp(relX, Keys[2].Time + 0.01, 1) 
+						end
+
+						Keys[DraggingPin] = ColorSequenceKeypoint.new(relX, Keys[DraggingPin].Value)
+
+						updateUI()
+					end)
+
+					updateUI()
+				end
+				local function OpenPicker()
+					Open = true
+					DeBounce = true
+					colorpicker.color.Values.Visible = true
+					colorpicker.color.SVPicker.Visible = true
+
+					colorpicker.HueValues.Visible = true
+					colorpicker.color.Values.Recent.Visible = true
+
+					colorpicker.interact.Interactable = false
+					colorpicker.QuickClose.Interactable = true
+
+					colorpicker.HueValues.Visible = true
+
+					local displayGrad = colorpicker.color:FindFirstChildOfClass("UIGradient")
+					if displayGrad then
+						displayGrad.Enabled = false
+					end
+
+					colorpicker:SetAttribute("UpdateHueLayout", not colorpicker:GetAttribute("UpdateHueLayout"))
+
+					tweenservice:Create(colorpicker.UICorner, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { CornerRadius = UDim.new(0,20) }):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.95, Enum.EasingStyle.Quart ), { Size = UDim2.new(0, 1,0, 1) }):Play()
+					tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(35, 35, 35) }):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromHSV(HSV[1], 1, 1) }):Play()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					--	tweenservice:Create(colorpicker.color.glow, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 1}):Play()
+					task.wait(0.12)
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.9, Enum.EasingStyle.Quart ), { Size = UDim2.new(1, -40,0, 160) }):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.9, Enum.EasingStyle.Quart ), { Position = UDim2.new(0.5, 0,0, 40) }):Play()
+
+					tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(17, 17, 17) }):Play()
+					tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Quart ), { Size = UDim2.new(1, -35,0, 300) }):Play()
+					tweenservice:Create(colorpicker.color.UICorner, TweenInfo.new( 0.8, Enum.EasingStyle.Quart ), { CornerRadius = UDim.new(0, 10) }):Play()
+
+					tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+
+					task.wait(0.6)
+
+					tweenservice:Create(colorpicker.color.SVPicker.Brightness, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Saturation, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Pin, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Pin.UIStroke, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+
+					task.wait(0.5)
+					tweenservice:Create(colorpicker.color.Values.Hue, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Hue.Pin, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Hue.Pin.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+
+					if data.Type == "Gradient" then
+						tweenservice:Create(colorpicker.color.Values.Grad, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin1, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin1.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin2, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin2.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+					end
+
+					tweenservice:Create(colorpicker.HueValues.HEX, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.V.HEXBox, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { TextTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.Copy, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+					task.wait(0.09)
+					tweenservice:Create(colorpicker.HueValues.RGB, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.V.RGBBox, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { TextTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.Copy, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+					task.wait(0.09)
+					tweenservice:Create(colorpicker.HueValues.Link, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.Frame.ImageLabel, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+					for _,v in ipairs(colorpicker.color.Values.Recent:GetChildren()) do
+						if v:IsA('Frame') then
+							task.wait(0.1)
+							tweenservice:Create(v, TweenInfo.new( 0.3, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+						end
+					end
+
+					task.wait(0.7)
+					DeBounce = false
+				end
+
+
+				colorpicker.interact.MouseButton1Click:Connect(function()
+					if DeBounce then return end
+					if not Open then
+						Open = true
+						OpenPicker()
+					end
+				end)
+
+				colorpicker.QuickClose.hitbox.MouseEnter:Connect(function()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 70,0, 3) }):Play()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+				end)
+
+				colorpicker.QuickClose.hitbox.MouseLeave:Connect(function()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 60,0, 3) }):Play()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(33, 33, 33) }):Play()
+				end)
+
+				local function ClosePicker()
+					Open = false
+					DeBounce = true
+					tweenservice:Create(colorpicker.UICorner, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { CornerRadius = UDim.new(1,0) }):Play()
+					tweenservice:Create(colorpicker, TweenInfo.new( 0.55, Enum.EasingStyle.Quint ), { Size = UDim2.new(1, -35,0, 40) }):Play()
+					--	tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.7, Enum.EasingStyle.Quart ), { Position = UDim2.new(1, -30,0, 10)}):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.55, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 20,0, 20) }):Play()
+					tweenservice:Create(colorpicker.color, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundColor3 = data.Color }):Play()
+					tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					--	tweenservice:Create(colorpicker.color.glow, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 0.7}):Play()
+					colorpicker.interact.Interactable = true
+					colorpicker.QuickClose.Interactable = false
+
+					--	task.wait(0.6)
+
+					tweenservice:Create(colorpicker.color.SVPicker.Brightness, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Saturation, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Pin, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.SVPicker.Pin.UIStroke, TweenInfo.new( 0.4, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+
+					tweenservice:Create(colorpicker.color.Values.Hue, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Hue.Pin, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Hue.Pin.UIStroke, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+
+					tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+					if data.Type == "Gradient" then
+						tweenservice:Create(colorpicker.color.Values.Grad, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin1, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin1.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin2, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+						tweenservice:Create(colorpicker.color.Values.Grad.Pin2.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+					end
+
+					local displayGrad = colorpicker.color:FindFirstChildOfClass("UIGradient")
+
+					if data.Type == "Gradient" and displayGrad then
+						displayGrad.Enabled = true
+						displayGrad.Color = ColorSequence.new(Keys)
+						-- Set to White so the gradient isn't "multiplied" or tinted by a background color
+						tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.new(1, 1, 1) }):Play()
+					else
+						if displayGrad then displayGrad.Enabled = false end
+						tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = data.Color }):Play()
+					end
+
+					tweenservice:Create(colorpicker.HueValues.RGB, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.UIStroke, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.V.RGBBox, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.RGB.Copy, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+					tweenservice:Create(colorpicker.HueValues.HEX, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.UIStroke, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.V.HEXBox, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.HEX.Copy, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+					tweenservice:Create(colorpicker.HueValues.Link, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.UIStroke, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.HueValues.Link.Frame.ImageLabel, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+					for _,v in ipairs(colorpicker.color.Values.Recent:GetChildren()) do
+						if v:IsA('Frame') then
+							tweenservice:Create(v, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+						end
+					end
+					colorpicker.HueValues.Visible = false
+					task.wait(1)
+					colorpicker.color.SVPicker.Visible = false
+					colorpicker.color.Values.Recent.Visible = false
+					task.wait(0.7)
+					DeBounce = false
+				end
+
+				colorpicker.QuickClose.hitbox.MouseButton1Click:Connect(function()
+					if DeBounce then return end
+					if Open then
+						Open = false
+						ClosePicker()
+					end
+				end)
+
+
+				for _,v in ipairs(colorpicker.HueValues:GetChildren()) do
+					if v:IsA("Frame") then
+						for _,v2 in ipairs(v:GetChildren()) do
+							if v2:IsA("ImageLabel") then
+								v2.MouseEnter:Connect(function()
+									tweenservice:Create(v2, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+								end)
+								v2.MouseLeave:Connect(function()
+									tweenservice:Create(v2, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageColor3 = Color3.fromRGB(66, 66, 66) }):Play()
+								end)
+							end
+						end
+					end
+				end
+
+				-- copy hex / rgb to clipboard
+				syde:OnClick(colorpicker.HueValues.HEX.Copy, function()
+					if syde:SetClipboard(FormatColor(data.Color, 'Hex')) then syde:FlashCopy(colorpicker.HueValues.HEX.Copy) end
+				end)
+				syde:OnClick(colorpicker.HueValues.RGB.Copy, function()
+					if syde:SetClipboard(FormatColor(data.Color, 'RGB', 2)) then syde:FlashCopy(colorpicker.HueValues.RGB.Copy) end
+				end)
+
+				local function AddRecentColor(newColor)
+					local recentFrame = colorpicker.colorPlaceHolder:Clone()
+					recentFrame.Visible = true
+					recentFrame.Parent = colorpicker.color.Values.Recent
+					recentFrame.BackgroundColor3 = newColor
+
+					recentFrame.interact.MouseButton1Click:Connect(function()
+				--[[	tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 5,0, 5) }):Play()
+					task.wait(0.09)
+					tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 12,0, 12) }):Play() ]]
+
+						local h, s, v = newColor:ToHSV()
+						if s > 0.02 then
+							HSV[1] = h
+						end
+						HSV[2] = s
+						HSV[3] = v
+						updatestuff()
+
+					end)
+
+					recentFrame.interact.MouseEnter:Connect(function()
+						tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 20,0, 20) }):Play()
+					end)
+
+					recentFrame.interact.MouseLeave:Connect(function()
+						tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 12,0, 12) }):Play()
+					end)
+
+					local maxRecentColors = 10
+					local recentContainer = colorpicker.color.Values.Recent
+
+					local children = recentContainer:GetChildren()
+					if #children > maxRecentColors then
+						for _, child in ipairs(children) do
+							if child:IsA("Frame") then
+								child:Destroy()
+								break
+							end
+						end
+					end
+				end
+
+				local SV, HUE = nil, nil
+
+				syde:AddConnection(SVPicker.InputBegan, function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						SV = runservice.RenderStepped:Connect(function()
+							local mouse = game.Players.LocalPlayer:GetMouse()
+							local ColorX = math.clamp(mouse.X - SVPicker.AbsolutePosition.X, 0, SVPicker.AbsoluteSize.X) / SVPicker.AbsoluteSize.X
+							local ColorY = math.clamp(mouse.Y - SVPicker.AbsolutePosition.Y, 0, SVPicker.AbsoluteSize.Y) / SVPicker.AbsoluteSize.Y
+
+							HSV[2] = ColorX
+							HSV[3] = 1 - ColorY
+
+							updatestuff()
+						end)
+					end
+				end)
+
+				syde:AddConnection(SVPicker.InputEnded, function(i)
+					if i.UserInputType == Enum.UserInputType.MouseButton1 and SV then
+						SV:Disconnect()
+						SV = nil
+						AddRecentColor(data.Color)
+					end
+				end)
+
+				syde:AddConnection(HUESlider.InputBegan, function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						HUE = runservice.RenderStepped:Connect(function()
+							local mouse = game.Players.LocalPlayer:GetMouse()
+							local ColorX = math.clamp(mouse.X - HUESlider.AbsolutePosition.X, 0, HUESlider.AbsoluteSize.X) / HUESlider.AbsoluteSize.X
+
+							HSV[1] = 1 - ColorX
+
+							updatestuff()
+						end)
+					end
+				end)
+
+				syde:AddConnection(HUESlider.InputEnded, function(i)
+					if i.UserInputType == Enum.UserInputType.MouseButton1 and HUE then
+						HUE:Disconnect()
+						HUE = nil
+						AddRecentColor(data.Color)
+					end
+				end)
+
+				colorpicker.HueValues.HEX.V.HEXBox.FocusLost:Connect(function(Enter)
+					if not Enter then return end
+
+					local hexInput = colorpicker.HueValues.HEX.V.HEXBox.Text
+
+					local success, result = pcall(function()
+						return Color3.fromHex(hexInput)
+					end)
+
+					if success then
+						local Hue, Saturation, Value = result:ToHSV()
+						colorpicker.HueValues.HEX.V.HEXBox.Text = ''
+						if Saturation > 0.02 then
+							HSV[1] = Hue
+						end
+						HSV[2] = Saturation
+						HSV[3] = Value
+						updatestuff()
+					else
+						warn("Failed to convert hex to color:", result)
+					end
+				end)
+
+
+				colorpicker.HueValues.RGB.V.RGBBox.FocusLost:Connect(function(Enter)
+					if not Enter then return end
+
+					local rgbInput = colorpicker.HueValues.RGB.V.RGBBox.Text
+
+					local r, g, b = rgbInput:match("^(%d+),%s*(%d+),%s*(%d+)$")
+
+					if r and g and b then
+
+						r, g, b = tonumber(r), tonumber(g), tonumber(b)
+
+						if r >= 0 and r <= 255 and g >= 0 and g <= 255 and b >= 0 and b <= 255 then
+							local color = Color3.fromRGB(r, g, b)
+
+							local Hue, Saturation, Value = color:ToHSV()
+							if Saturation > 0.02 then
+								HSV[1] = Hue
+							end
+							HSV[2] = Saturation
+							HSV[3] = Value
+
+							colorpicker.HueValues.RGB.V.RGBBox.Text = ''
+							updatestuff()
+						else
+							warn("RGB values must be between 0 and 255.")
+						end
+					else
+						warn("Invalid RGB format. Please use the format 'R,G,B' (e.g., 16,16,16).")
+					end
+				end)
+
+				local UserInputService = game:GetService("UserInputService")
+				local TweenService = game:GetService("TweenService")
+				local RunService = game:GetService("RunService")
+
+				local linkDragging = false
+				local originalPosition = UDim2.new(0.5, 0,0, 0)
+				local draggedColorPicker = nil
+
+				local function isMouseOver(guiObject)
+					local mouse = game.Players.LocalPlayer:GetMouse()
+					local pos = guiObject.AbsolutePosition
+					local size = guiObject.AbsoluteSize
+					return mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y
+				end
+
+				colorpicker.HueValues.Link.Frame.interact.MouseButton1Down:Connect(function()
+					linkDragging = true
+					draggedColorPicker = colorpicker
+
+					TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(0, 40,1, 0)}):Play()
+
+					local followMouse
+					followMouse = RunService.RenderStepped:Connect(function()
+						if not linkDragging then
+							followMouse:Disconnect()
+							return
+						end
+						local mouse = game.Players.LocalPlayer:GetMouse()
+						--	colorpicker.HueValues.Link.Frame.Position = UDim2.new(0, mouse.X - colorpicker.AbsolutePosition.X - 50, 0, mouse.Y - colorpicker.AbsolutePosition.Y - 260)
+						TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(0, mouse.X - colorpicker.AbsolutePosition.X - 50, 0, mouse.Y - colorpicker.AbsolutePosition.Y - 260) }):Play()
+
+						for _, otherPicker in pairs(Page:GetChildren()) do
+							if otherPicker:IsA("Frame") and otherPicker:FindFirstChild("isLinkable") and otherPicker.isLinkable.Value then
+								if isMouseOver(otherPicker) and otherPicker ~= draggedColorPicker then
+									TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+								else
+									TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+								end
+							end
+						end
+					end)
+				end)
+
+				UserInputService.InputEnded:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 and linkDragging then
+						linkDragging = false
+						local foundTarget = false
+
+						for _, otherPicker in pairs(Page:GetChildren()) do
+							if otherPicker:IsA("Frame") and otherPicker:FindFirstChild("isLinkable") and otherPicker.isLinkable.Value then
+								if isMouseOver(otherPicker) and otherPicker ~= draggedColorPicker then
+									otherPicker.HueSat.Value = draggedColorPicker.HueSat.Value
+									updatestuff() 
+									foundTarget = true
+									TweenService:Create(
+										colorpicker.HueValues.Link.Frame,
+										TweenInfo.new(0.3, Enum.EasingStyle.Quint),
+										{ Position = originalPosition }
+									):Play()
+
+									TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+									--	TweenService:Create(colorpicker.HueValues.HEX.Link, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {ImageColor3 = Color3.fromRGB(66, 66, 66)}):Play()
+									TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(1, 0,1, 0)}):Play()
+									break
+								end
+							end
+						end
+
+						if not foundTarget then
+							--	TweenService:Create(colorpicker.HueValues.HEX.Link, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {ImageColor3 = Color3.fromRGB(66, 66, 66)}):Play()
+							TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(1, 0,1, 0)}):Play()
+							TweenService:Create(
+								colorpicker.HueValues.Link.Frame,
+								TweenInfo.new(0.3, Enum.EasingStyle.Quint),
+								{ Position = originalPosition }
+							):Play()
+						end
+					end
+				end) 
+
+				local function updateColorPicker()
+					local Hue, Saturation, Value = HueSat.Value:ToHSV()
+
+					if Saturation > 0.02 then
+						HSV[1] = Hue
+					end
+					HSV[2] = Saturation
+					HSV[3] = Value
+
+					updatestuff()
+				end
+
+				HueSat.Changed:Connect(updateColorPicker)
+
+				local hueIncrement = 0.005 
+
+				local function RainbowEffect()
+					HueValue = (HueValue + hueIncrement) % 1
+					HSV[1] = HueValue
+
+					updatestuff()
+				end
+
+				local isRainbowEnabled = false
+				local huerender = nil
+
+				local function ToggleRainbowEffect()
+					isRainbowEnabled = not isRainbowEnabled
+					if isRainbowEnabled then
+						if not huerender then
+							huerender = runservice.RenderStepped:Connect(RainbowEffect)
+							tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential ), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+						end
+					else
+						if huerender then
+							huerender:Disconnect()
+							tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential ), {ImageColor3 = Color3.fromRGB(62, 62, 62)}):Play()
+							huerender = nil
+						end
+					end
+				end
+
+				colorpicker.color.Values.Rainbow.MouseButton1Click:Connect(ToggleRainbowEffect)
+
+				function data:Set(RGBColor)
+
+					if typeof(RGBColor) == "table" then
+						RGBColor = Color3.fromRGB(RGBColor.R, RGBColor.G, RGBColor.B)
+					end
+
+					data.Color = RGBColor
+
+					local h, s, v = RGBColor:ToHSV()
+					HSV[1], HSV[2], HSV[3] = h, s, v
+					updatestuff()
+				end
+
+				if data.SFlag then
+					syde.SettingsFlags[data.SFlag] = data
+				end
+
+				if syde.ConfigEnabled and data.Flag and syde.Flags[data.Flag] then
+					local existing = syde.Flags[data.Flag]
+					if existing.Color then
+						data:Set(existing.Color, true)
+					end
+				end
+
+				colorpicker.color.Values.Rainbow.MouseButton1Click:Connect(ToggleRainbowEffect)
+
+				return data
+
+			end
+
+
+			function telement:Dropdown(Dropdown)
+				local data = {
+					Title = Dropdown.Title or "Temp Dropdown";
+					Options = Dropdown.Options or {};
+					StarterOption = Dropdown.StarterOption;
+					PlaceHolder = Dropdown.PlaceHolder or "Select Option...";
+					Multi = Dropdown.Multi or false;
+					CallBack = Dropdown.CallBack;
+				}
+
+				local dropdown = window.settings.pages.page.Dropdown:Clone()
+				dropdown.Visible = true
+				dropdown.Parent = Page
+				dropdown.title.Text = data.Title
+				dropdown.Name = data.Title
+				dropdown.dropholder.drop.Container.Option.Visible = false
+				dropdown.dropholder.drop.Container.Visible = false
+				tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(0.33, -20,0.576, -75) }):Play()
+				dropdown.dropholder.drop.selected.Text = data.PlaceHolder 
+
+				local DropOpen = false
+				local DeBounce = false
+				local OptionButton = dropdown.dropholder.drop.Container.Option
+				local SelectedOptions = {}
+				local SelectedOrder = {}
+
+				local function UpdateCustomLayout()
+					local yOffset = 0
+					for _, option in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+						if option:IsA("Frame") and option.Visible then
+							tweenservice:Create(option, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
+							yOffset = yOffset + option.Size.Y.Offset + 7
+						end
+					end
+				end
+
+				local function OpenDrop()
+					DropOpen = true
+					dropdown.dropholder.drop.Container.Visible = true
+					dropdown.dropholder.drop.search.Visible = true
+
+					tweenservice:Create(dropdown, TweenInfo.new(1.34, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -35, 0, 300) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.UICorner, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { CornerRadius = UDim.new(0, 20) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -20, 1, -75) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.v0, TweenInfo.new(1.34, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.down, TweenInfo.new(0.35, Enum.EasingStyle.Quint), { Rotation = 180 }):Play()
+
+					tweenservice:Create(dropdown.dropholder.drop.search, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.65 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0.4 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.TextBox, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.9 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.icon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.85 }):Play()
+
+				end
+
+				local function CloseDrop()
+					DropOpen = false
+					tweenservice:Create(dropdown, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -35, 0, 95) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.UICorner, TweenInfo.new(1, Enum.EasingStyle.Quint), { CornerRadius = UDim.new(1,0) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(0.33, -20, 0.576, -75) }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.v0, TweenInfo.new(1.34, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.down, TweenInfo.new(0.35, Enum.EasingStyle.Quint), { Rotation = 0 }):Play()
+
+					tweenservice:Create(dropdown.dropholder.drop.search, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 1 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.TextBox, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+					tweenservice:Create(dropdown.dropholder.drop.search.icon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+
+					task.wait(0.6)
+					dropdown.dropholder.drop.Container.Visible = false
+					dropdown.dropholder.drop.search.Visible = false
+
+				end
+
+				dropdown.dropholder.drop.down.MouseButton1Click:Connect(function()
+					if DeBounce then return end
+					DeBounce = true
+
+					if DropOpen then
+						CloseDrop()
+					else
+						OpenDrop()
+					end
+
+					task.delay(1.2, function()
+						DeBounce = false
+					end)
+				end)
+
+				local function AddToSelected(option)
+					if not SelectedOptions[option] then
+						SelectedOptions[option] = true
+
+						local originalIndex
+						for i, opt in ipairs(data.Options) do
+							if opt == option then
+								originalIndex = i
+								break
+							end
+						end
+
+						local insertIndex = 1
+						for i, selected in ipairs(SelectedOrder) do
+							local selectedIndex = table.find(data.Options, selected)
+							if selectedIndex and selectedIndex < originalIndex then
+								insertIndex = i + 1
+							else
+								break
+							end
+						end
+						table.insert(SelectedOrder, insertIndex, option)
+					end
+				end
+
+				local function RemoveFromSelected(option)
+					if SelectedOptions[option] then
+						SelectedOptions[option] = nil
+						for i = #SelectedOrder, 1, -1 do
+							if SelectedOrder[i] == option then
+								table.remove(SelectedOrder, i)
+								break
+							end
+						end
+					end
+
+					local selectedContainer = dropdown.dropholder.drop.selectContainer.ScrollingFrame
+					for _, child in ipairs(selectedContainer:GetChildren()) do
+						if child:IsA("Frame") and child.Name == option then
+							child:Destroy()
+							break
+						end
+					end
+				end
+
+				local function UpdateSelectedText()
+					local selectedContainer = dropdown.dropholder.drop.selectContainer.ScrollingFrame
+					local placeholderText = dropdown.dropholder.drop.selected
+					selectedContainer.Visible = data.Multi
+					dropdown.dropholder.drop.selected.Visible = false
+
+
+					if data.Multi then
+
+						if #SelectedOrder == 0 then
+							placeholderText.Visible = true
+							selectedContainer.Visible = false
+							return
+						end
+
+
+						-- Create chips for each selected option
+						for _, option in ipairs(SelectedOrder) do
+							-- Prevent duplicate pills
+							if not selectedContainer:FindFirstChild(option) then
+								local optionGroup = selectedContainer.result:Clone()
+								optionGroup.Visible = true
+								optionGroup.Name = option
+								optionGroup.TextLabel.Text = option
+
+								-- Set up remove button
+								optionGroup.X.MouseButton1Click:Connect(function()
+									RemoveFromSelected(option)
+									UpdateSelectedText()
+
+									-- Visually update the dropdown list
+									for _, opt in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+										if opt:IsA("Frame") and opt.Name == option then
+											tweenservice:Create(opt, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+											tweenservice:Create(opt, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+											tweenservice:Create(opt.Title, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+											tweenservice:Create(opt.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+											tweenservice:Create(opt.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0.9}):Play()
+										end
+									end
+
+									if data.CallBack then
+										data.CallBack(SelectedOrder)
+									end
+								end)
+
+								optionGroup.Parent = selectedContainer
+
+								-- Optional: auto-size width
+								task.defer(function()
+									local padding = 40
+									local textWidth = optionGroup.TextLabel.TextBounds.X
+									local totalWidth = textWidth + padding
+
+									optionGroup.TextLabel.Size = UDim2.new(0, textWidth, 1, 0)
+
+									tweenservice:Create(optionGroup, TweenInfo.new(0.67, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, totalWidth, 0, 20)}):Play()
+								end)
+							end
+						end
+
+					else
+						-- Single option text fallback
+						dropdown.dropholder.drop.selected.Visible = true
+						if #SelectedOrder > 0 then
+							dropdown.dropholder.drop.selected.Text = SelectedOrder[1]
+						else
+							dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+						end
+					end
+				end
+
+				--[SEARCH]
+				dropdown.dropholder.drop.search.TextBox:GetPropertyChangedSignal("Text"):Connect(function()
+					local searchText = dropdown.dropholder.drop.search.TextBox.Text:lower()
+
+					for _, option in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+						if option:IsA("Frame") and option:FindFirstChild("Title") then
+							local optionText = option.Title.Text:lower()
+							local isTemplate = option.Name == "Option"
+							local shouldShow = not isTemplate and (searchText == "" or optionText:find(searchText, 1, true) or SelectedOptions[option.Title.Text])
+
+							if shouldShow then
+								option.Visible = true
+								if SelectedOptions[option.Title.Text] then
+									tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+									tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+									tweenservice:Create(option.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+									tweenservice:Create(option.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+									tweenservice:Create(option.ImageLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+								else
+									tweenservice:Create(option, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+									tweenservice:Create(option, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+									tweenservice:Create(option.Title, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+									tweenservice:Create(option.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+									tweenservice:Create(option.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0.9}):Play()
+								end
+							else
+								-- Hide with animation, but wait before setting Visible = false
+								tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+								tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+								tweenservice:Create(option.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+								tweenservice:Create(option.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
+								option.Visible = false
+							end
+						end
+					end
+
+					UpdateCustomLayout()
+				end)
+
+
+
+				local function SetDropdownOptions()
+					local starterSet = false
+					for _, OptionText in ipairs(data.Options) do
+						local option = OptionButton:Clone()
+						option.Title.Text = OptionText
+						option.Parent = dropdown.dropholder.drop.Container
+						option.Visible = true
+						option.Name = OptionText
+
+						if OptionText == data.StarterOption and not starterSet then
+							starterSet = true
+							dropdown.dropholder.drop.selected.Text = OptionText
+							SelectedOptions = {[OptionText] = true}
+							SelectedOrder = {OptionText}
+
+							tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+							tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+						end
+
+						option.Interact.MouseButton1Click:Connect(function()
+							if data.Multi then
+								if SelectedOptions[OptionText] then
+									RemoveFromSelected(OptionText)
+									tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+									tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0.9}):Play()
+								else
+									AddToSelected(OptionText)
+									tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+									tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+								end
+
+								if data.CallBack then
+									data.CallBack(SelectedOrder)
+								end
+							else
+								dropdown.dropholder.drop.selected.Text = OptionText
+
+								SelectedOptions = {[OptionText] = true}
+								SelectedOrder = {OptionText}
+
+								for _, opt in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+									if opt:IsA("Frame") then
+										tweenservice:Create(opt, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+										tweenservice:Create(opt.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0.9}):Play()
+									end
+								end
+
+								tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+
+
+								if data.CallBack then
+									data.CallBack(OptionText)
+								end
+
+
+								CloseDrop()
+							end
+
+							UpdateSelectedText()
+
+						end)
+					end
+
+					if not starterSet then
+						dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+					end
+
+					UpdateCustomLayout()
+				end
+
+				SetDropdownOptions()
+
+				function data:GetSelected()
+					return SelectedOrder[1]
+				end
+
+				function data:SetOptions(newOptions, starter)
+					data.Options = newOptions or {}
+					data.StarterOption = starter
+					for _, child in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+						if child:IsA("Frame") and child.Name ~= "Option" then
+							child:Destroy()
+						end
+					end
+					SelectedOptions = {}
+					SelectedOrder = {}
+					dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+					SetDropdownOptions()
+				end
+
+				return data
+			end
+
+			function telement:Slider(Slider)
+				local data = {
+					Title = Slider.Title;
+					Desc = Slider.Description;
+					Sliders = Slider.Sliders
+				}
+
+				local slider = window.settings.pages.page.Slider:Clone()
+				slider.Visible = true
+				slider.Parent = Page
+				slider.title.Text = data.Title
+				slider.Name = data.Title
+				slider.slideholder.slider.Visible = false
+
+
+				--[SLIDERS INITIALIZE]
+				for _, Options in ipairs(data.Sliders) do
+					local Slider = window.settings.pages.page.Slider.slideholder.slider:Clone()
+
+					Options = {
+						Title = Options.Title or "Slider";
+						Increment = Options.Increment or 1;
+						Range = Options.Range or {0, 100};
+						StarterValue = Options.StarterValue or 16;
+						CallBack = Options.CallBack;
+						SFlag = Options.SFlag;
+						SettingsConfig = true;
+					}
+
+					Slider.Name = Options.Title
+					Slider.Title.Text = Options.Title
+					Options.Value = Options.StarterValue
+
+					local dragging = false
+					Slider.Visible = true
+					Slider.Parent = slider.slideholder
+
+					local SliderPosition
+					if Options.StarterValue <= Options.Range[1] then
+						SliderPosition = 0
+					elseif Options.StarterValue >= Options.Range[2] then
+						SliderPosition = 1
+					else
+						local range = Options.Range[2] - Options.Range[1]
+						SliderPosition = (Options.StarterValue - Options.Range[1]) / range
+					end
+
+
+					Slider.slide.slideframe:TweenSize(UDim2.new(SliderPosition, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.5, true)
+
+					syde:registerLoadTween(
+						Slider.slide.slideframe,
+						{Size = UDim2.new(SliderPosition, 0, 1, 0)},
+						{Size = UDim2.new(0, 100,1, 0)},
+						TweenInfo.new(0.85, Enum.EasingStyle.Quint)
+					)
+
+					syde:replayLoadTweens(Slider.slide.slideframe)
+
+					local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+					Slider.v.Text = string.format("<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>", Options.StarterValue, Options.Range[2])
+
+					local function BuildTicks(slide, options)
+						local ticksFrame = slide:FindFirstChild("Ticks")
+						if not ticksFrame then
+							warn("❌ Missing Slider.slide.Ticks")
+							return
+						end
+
+						local template = ticksFrame:FindFirstChild("tick")
+						if not template then
+							warn("❌ Missing Tick template inside Ticks")
+							return
+						end
+
+						local min, max = options.Range[1], options.Range[2]
+						local increment = options.Increment
+						local range = max - min
+
+						if range <= 0 or increment <= 0 then
+							warn("❌ Invalid range/increment", range, increment)
+							return
+						end
+
+						local tickCount = math.floor(range / increment) + 1
+						if tickCount < 2 then return end
+
+						-- wait for UI to size properly
 						task.wait()
+
+						local width = guiAbsSize(ticksFrame).X
+						local height = guiAbsSize(ticksFrame).Y
+
+
+						local spacing = width / (tickCount - 1)
+
+						-- Reuse existing ticks instead of destroying all
+						local existingTicks = {}
+						for _, child in ipairs(ticksFrame:GetChildren()) do
+							if child:IsA("Frame") and child ~= template then
+								table.insert(existingTicks, child)
+							end
+						end
+
+						-- Create new ticks if needed
+						for i = 0, tickCount - 1 do
+							local tick = existingTicks[i + 1] or template:Clone()
+							tick.Visible = true
+							tick.AnchorPoint = Vector2.new(0.5, 0.5)
+							tick.BorderSizePixel = 0
+							--	tick.BackgroundTransparency = 1
+							tick.Parent = ticksFrame
+
+							local finalPos = UDim2.fromOffset(i * spacing, height / 1.5)
+							tweenservice:Create(
+								tick,
+								TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+								{
+									Position = finalPos,
+									BackgroundTransparency = 0.85
+								}
+							):Play()
+						end
+
+						-- Destroy extra ticks
+						for i = tickCount + 1, #existingTicks do
+							existingTicks[i]:Destroy()
+						end
+
+					end
+
+					-- Connect AbsoluteSize change **only once**
+					if Options.Increment > 4 then
+						if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
+							pcall(function()
+								local conn = Slider.slide.Ticks:GetPropertyChangedSignal("Size"):Connect(function()
+									pcall(function()
+										BuildTicks(Slider.slide, Options)
+									end)
+								end)
+								local marker = Instance.new("BoolValue")
+								marker.Name = "_ResizeConnection"
+								marker.Parent = Slider.slide.Ticks
+								marker:GetPropertyChangedSignal("Parent"):Connect(function()
+									if not marker.Parent then
+										conn:Disconnect()
+									end
+								end)
+							end)
+						end
+					end
+
+
+
+
+					local function UpdateSlider(x)
+						if dragging then
+							local sliderStart = Slider.slide.AbsolutePosition.X
+							local sliderWidth = Slider.slide.AbsoluteSize.X
+							local sliderPosition = (x - sliderStart) / sliderWidth
+							sliderPosition = math.clamp(sliderPosition, 0, 1)
+
+							local range = Options.Range[2] - Options.Range[1]
+							local newValue = Options.Range[1] + sliderPosition * range
+							newValue = math.floor((newValue - Options.Range[1]) / Options.Increment + 0.5) * Options.Increment + Options.Range[1]
+							newValue = syde:RoundTo(newValue, syde:DecimalPlaces(Options.Increment))
+
+							-- Update the slider visual position
+							local snapPosition = (newValue - Options.Range[1]) / range
+							Slider.slide.slideframe:TweenSize(UDim2.new(snapPosition, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.55, true)
+
+
+							-- Update the displayed value
+							local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+							Slider.v.Text = string.format("<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>", newValue, Options.Range[2])
+
+
+							tweenservice:Create(Slider.Title, TweenInfo.new(0.55, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+							local success, errorMsg = pcall(function()
+								Options.CallBack(newValue)
+							end)
+							if not success then
+								syde:Report("Slider '" .. Slider.Name .. "' callback", errorMsg)
+							end
+
+							Options.StarterValue = newValue
+						end
+					end
+
+					Slider.slide.Interact.MouseButton1Down:Connect(function()
+						dragging = true
+					end)
+
+					Slider.slide.Interact.MouseButton1Up:Connect(function()
+						dragging = false
+					end)
+
+					syde:AddConnection(userinput.InputEnded, function(input, processed)
+						if input.UserInputType == Enum.UserInputType.MouseButton1  or input.UserInputType == Enum.UserInputType.Touch then
+							dragging = false
+							tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+						end
+					end)
+
+					syde:AddConnection(userinput.InputChanged, function(input)
+						if dragging and input.UserInputType == Enum.UserInputType.MouseMovement  or input.UserInputType == Enum.UserInputType.Touch  then
+							UpdateSlider(input.Position.X)
+						end
+					end)
+
+					Slider.slide.slideframe.BackgroundColor3 = syde.theme.HitBox
+					Slider.slide.slideframe.shadowHolder.ambientShadow.ImageColor3 = syde.theme.HitBox
+					Slider.slide.slideframe.shadowHolder.penumbraShadow.ImageColor3 = syde.theme.HitBox
+					Slider.slide.slideframe.shadowHolder.umbraShadow.ImageColor3 = syde.theme.HitBox
+					slider.slideholder.Size = UDim2.new(1,-30,0,slider.slideholder.UIListLayout.AbsoluteContentSize.Y)
+					local ss = slider.slideholder.UIListLayout.AbsoluteContentSize.Y
+					slider.Size = UDim2.new(1,-35,0, ss  + 20)
+
+					syde:AddConnection(syde.Comms.Event, function(p, color)
+						if p == 'HitBox' then
+							Slider.slide.slideframe.BackgroundColor3 = color
+							Slider.slide.slideframe.shadowHolder.ambientShadow.ImageColor3 = color
+							Slider.slide.slideframe.shadowHolder.penumbraShadow.ImageColor3 = color
+							Slider.slide.slideframe.shadowHolder.umbraShadow.ImageColor3 = color
+						end
+					end)
+
+					function Options:Set(NewVal, skipSave)
+						local range = Options.Range[2] - Options.Range[1]
+
+						-- snap value to increment (same logic as UpdateSlider)
+						NewVal = math.floor((NewVal - Options.Range[1]) / Options.Increment + 0.5) * Options.Increment + Options.Range[1]
+						NewVal = syde:RoundTo(NewVal, syde:DecimalPlaces(Options.Increment))
+
+						local sliderPosition = (NewVal - Options.Range[1]) / range
+
+						Slider.slide.slideframe:TweenSize(
+							UDim2.new(sliderPosition, 0, 1, 0),
+							Enum.EasingDirection.Out,
+							Enum.EasingStyle.Quint,
+							0.55,
+							true
+						)
+
+						-- Register load tween
+						syde:registerLoadTween(
+							Slider.slide.slideframe,
+							{Size = UDim2.new(sliderPosition, 0, 1, 0)},
+							{Size = UDim2.new(0, 100, 1, 0)},
+							TweenInfo.new(0.85, Enum.EasingStyle.Quint)
+						)
+
+						-- detect decimal places from increment
+						local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+
+						-- update display (decimal safe)
+						Slider.v.Text = string.format(
+							"<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>",
+							NewVal,
+							Options.Range[2]
+						)
+
+						-- Tween title appearance
+						tweenservice:Create(Slider.Title, TweenInfo.new(0.55, Enum.EasingStyle.Exponential), {
+							TextTransparency = 0
+						}):Play()
+
+						-- Callback
+						local success, result = pcall(function()
+							Options.CallBack(NewVal)
+						end)
+
+						if not success then
+							syde:Report("Slider '" .. Slider.Name .. "' callback", result)
+						end
+
+						Options.StarterValue = NewVal
+					end
+
+					-- click the value to type a custom number (reverts if outside range)
+					syde:AttachSliderInput(Slider, Options)
+
+					if Options.SFlag then
+						if Options.SFlag then
+							syde.SettingsFlags[Options.SFlag] = Options
+						end
+					end
+
+				end
+
+				--[DESC]
+				local descLabel = slider.slideholder:FindFirstChild("Desc")
+
+				if descLabel then
+					if data.Desc and data.Desc ~= "" then
+						descLabel.Text = data.Desc
+						descLabel.Visible = true
+						descLabel.TextWrapped = true
+						bindSliderDescResize(descLabel, slider)
+					else
+						descLabel.Visible = false
 					end
 				end
+			end
+
+			function telement:Paragraph(Paragraph)
+				local ParaData = {
+					Title = Paragraph.Title;
+					Content = Paragraph.Content;
+				}
+
+				local Para = window.settings.pages.page.Paragraph:Clone()
+				Para.Visible = true
+				Para.Parent = Page
+				setParagraphTitle(Para, ParaData.Title)
+				local paraContent = getParagraphContent(Para)
+				if not paraContent then
+					warn("[Syde] Paragraph template is missing a content label")
+					return { Set = function() end, Instance = Para }
+				end
+				pcall(function()
+					paraContent.Text = ParaData.Content
+				end)
+				Para:SetAttribute("Searchable", true)
+
+				local function updateSize(animate)
+					pcall(function()
+						if not paraContent or not paraContent.Parent then
+							return
+						end
+						applyParagraphSize(Para, paraContent, animate == true)
+					end)
+				end
+
+				updateSize(false)
+
+				pcall(function()
+					paraContent:GetPropertyChangedSignal("Text"):Connect(function()
+						task.defer(function()
+							updateSize(false)
+						end)
+					end)
+				end)
+
+				local ParagraphSettings = {}
+
+				function ParagraphSettings:Set(text, title)
+					deferParagraphUpdate(function()
+						setParagraphTitle(Para, title)
+						paraContent = applyParagraphContent(Para, paraContent, text)
+						scheduleParagraphResize(Para, paraContent, true)
+					end)
+				end
+
+				ParagraphSettings.Instance = Para
+				ParagraphSettings.ContentLabel = paraContent
+
+				return ParagraphSettings
+			end
+
+			function telement:TextInput(TextInput)
+				local data = {
+					Title = TextInput.Title or "Text Input",
+					PlaceHolder = TextInput.PlaceHolder or "Enter text...",
+					NumbersOnly = TextInput.NumberOnly or false,
+					ClearOnLost = TextInput.ClearOnLost == nil and true or TextInput.ClearOnLost,
+					--	MaxSize = TextInput.MaxSize or 100,
+					CallBack = TextInput.CallBack,
+				}
+
+				local textinput =  window.settings.pages.page.Input:Clone()
+				textinput.Visible = true
+				textinput.Parent = Page
+				textinput.Name = data.Title
+				textinput.title.Text = data.Title
+				textinput.TextFrame.TextBox.PlaceholderText = data.PlaceHolder
+
+				local textBox = textinput.TextFrame.TextBox
+				local defaultHeight = 32
+				--	local maxHeight = data.MaxSize
+				local ignoreNextClear = false
+
+
+
+				textinput.TextFrame.Enter.MouseEnter:Connect(function()
+					tweenservice:Create(textinput.TextFrame.Enter, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+				end)
+
+				textinput.TextFrame.Enter.MouseLeave:Connect(function()
+					tweenservice:Create(textinput.TextFrame.Enter, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextColor3 = Color3.fromRGB(40, 40, 40)}):Play()
+				end)
+
+				textBox:GetPropertyChangedSignal("Text"):Connect(function()
+					if data.NumbersOnly then
+						textBox.Text = textBox.Text:gsub("%D", "")
+					end
+
+					textBox.Size = UDim2.new(1, -60, 0, defaultHeight + 40)
+
+					local textHeight = defaultHeight
+					pcall(function()
+						textHeight = measureLabelTextHeight(textBox, defaultHeight)
+					end)
+
+					if textBox.Text == "" then
+						textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+					else
+						local newHeight = math.min(textHeight + 18, 120 + 50)
+						textBox.Size = UDim2.new(1, -60, 0, newHeight)
+
+					end
+
+				end)
+
+				textinput.TextFrame:GetPropertyChangedSignal("Size"):Connect(function()
+					local newHeight = textinput.TextFrame.Size.Y.Offset
+					local extraHeight = 32
+
+
+
+
+					tweenservice:Create(
+						textinput,
+						TweenInfo.new(0.7, Enum.EasingStyle.Quint),
+						{ Size = UDim2.new(1, -35, 0, newHeight + extraHeight + 35) }
+					):Play()
+
+					--	tweenservice:Create(textinput.ImageLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quart), { Position = UDim2.new(1, -20,1, -15) }):Play()
+
+
+				end)
+
+				textBox:GetPropertyChangedSignal("Size"):Connect(function()
+					local newHeight = textBox.Size.Y.Offset
+					local totalHeight = math.max(newHeight, defaultHeight)
+
+					tweenservice:Create(
+						textinput.TextFrame,
+						TweenInfo.new(0.7, Enum.EasingStyle.Quint),
+						{ Size = UDim2.new(1, -60, 0, totalHeight + 0) }
+					):Play()
+
+
+				end)
+
+				local function ProcessInput(text)
+					local success, errorMsg = pcall(function()
+						data.CallBack(text)
+					end)
+					if not success then
+						syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+					end
+				end
+
+				textBox.FocusLost:Connect(function(enterPressed)
+					if not enterPressed then return end
+
+					local success, errorMsg = pcall(function()
+						data.CallBack(textBox.Text)
+					end)
+					if not success then
+						syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+					end
+
+					if data.ClearOnLost then
+						task.defer(function()
+							textBox.Text = ""
+							textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+						end)
+					else
+						textBox.ClearTextOnFocus = false
+					end
+				end)
+
+				textinput.TextFrame.Enter.MouseButton1Click:Connect(function()
+					local success, errorMsg = pcall(function()
+						data.CallBack(textBox.Text)
+					end)
+					if not success then
+						syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+					end
+
+					if data.ClearOnLost then
+						task.defer(function()
+							textBox.Text = ""
+							textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+						end)
+					else
+						textBox.ClearTextOnFocus = false
+					end
+				end)
+
+
+			end
+
+			-- guard every builder so a failed element shows the banner instead of breaking the UI
+			for _bn, _bf in pairs(telement) do
+				if type(_bf) == "function" then
+					telement[_bn] = syde:Guard("Building a '" .. tostring(_bn) .. "' element", _bf)
+				end
+			end
+
+			return telement
+
+		end
+
+		--@@SettingInit
+
+		local a = settings:inittab({Title = 'Theme'})
+		local b = settings:inittab({Title = 'Privacy'})
+		local c = settings:inittab({Title = 'Info'})
+
+		a:Keybind({
+			Title = 'Toggle UI',
+			Key = uitoggle,
+			OnKeyChanged = function(newKey)
+				uitoggle = newKey
+			end,
+			CallBack = function()
+				ToggleUI()
+			end,
+		})
+
+		a:ColorPicker({
+			Title = 'Accent',
+			RD = false,
+			Linkable = true,
+			Color = syde.theme.Accent;
+			CallBack = function(v)
+				syde:UpdateTheme({
+					['Accent'] = v
+				})
+			end,
+			SFlag = 'AC'
+		})
+
+		a:ColorPicker({
+			Title = 'Hitbox',
+			RD = false,
+			Linkable = true,
+			Color = syde.theme.HitBox;
+			CallBack = function(c)
+				syde:UpdateTheme({
+					['HitBox'] = c
+				})
+			end,
+			SFlag = 'HB'
+		})
+
+		local seq = syde.theme.DropShadow
+		local k = seq.Keypoints
+
+	--[[	a:ColorPicker({
+			Title = 'Dropshadow';
+			Linkable = true;
+			Type = 'Gradient';
+
+			Color  = k[1].Value;
+			Color2 = k[#k].Value;
+
+			GradientPath = window.shadow.ImageLabel.UIGradient;
+
+			CallBack = function(value)
+				local seq
+
+				if typeof(value) == "ColorSequence" then
+					seq = value
+				elseif typeof(value) == "Color3" then
+					seq = ColorSequence.new(value)
+				else
+					warn("Invalid DropShadow value:", typeof(value))
+					return
+				end
+
+				syde:UpdateTheme({
+					DropShadow = seq
+				})
+			end;
+			SFlag = 'DS'
+		})]]
+
+		local rotateGradient = false
+		local rotating = false
+
+		local function startGradientRotation()
+			if rotating then return end
+			rotating = true
+
+			task.spawn(function()
+				local grad = window.shadow.ImageLabel.UIGradient
+				local rotation = 0
+				while rotateGradient and grad and grad.Enabled do
+					rotation = (rotation + 1) % 360
+					grad.Rotation = rotation
+					task.wait() -- adjust speed if you want
+				end
+				rotating = false
 			end)
 		end
-	end,
-	opts = {
-		{type = "slider", label = "Shovel Delay (0 = Max Speed)", value = 0, min = 0, max = 30, suffix = "s", callback = function(value)
-			shoveldelay = value
-		end},
-		{type = "dropdown", label = "Filter Type (Fruits)", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			shovelftype = value
-		end},
-		{type = "multiselect", label = "Filter Fruits", value = "None", list = gameLists.crops, callback = function(value)
-			shovelflist = value
-		end},
-		{type = "dropdown", label = "Filter Type (Plants)", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			shovelplantftype = value
-		end},
-		{type = "multiselect", label = "Filter Plants", value = "None", list = gameLists.plants, callback = function(value)
-			shovelplantslist = value
-		end},
-		{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			shovelmuttype = value
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			shovelmutlist = value
-		end},
-		{type = "textbox", label = "Min Weight Filter (kg)", value = "0", placeholder = "Enter min weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			shovelminweight = num or 0
-		end},
-		{type = "textbox", label = "Max Weight Filter (kg)", value = "0", placeholder = "Enter max weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			shovelmaxweight = num or 0
-		end},
-	}
-})
-;(function()
-	local stealRunning = false
-	local stealThread = nil
-	local stealDelay = 0.35
-	local stealMaxEnabled = false
-	local stealMax = 50
-	local stealSpeed = 180
-	local stealMode = "Bypass Method [NEW BEST!]"
-	local stealPriority = "Highest Price"
-	local stealCheckNight = true
-	local stealCheckOwner = true
-	local stealTargetPlots = ""
-	local stealBestParagraph = nil
-	local stealRecent = {}
-	local stealRecentSec = 1.5
 
-	local function formatStealMoney(n)
-		if n >= 1000000000 then
-			return string.format("%.2fB", n / 1000000000)
-		elseif n >= 1000000 then
-			return string.format("%.2fM", n / 1000000)
-		elseif n >= 1000 then
-			return string.format("%.2fK", n / 1000)
-		end
-		return tostring(math.floor(n))
-	end
+		a:Toggle({
+			Title = 'Rotate Gradient',
+			Description = 'Slowly rotates the gradient if enabled.',
+			Value = false,
+			CallBack = function(v)
+				rotateGradient = v
+				local grad = window.shadow.ImageLabel.UIGradient
 
-	local function getStealEstPrice(seedName, sizeMulti, mutation, decay)
-		local price = calcGamePrice(seedName, sizeMulti, mutation, decay)
-		if price > 0 then
-			return price
-		end
-		local base = getbaseprice(seedName)
-		if base <= 0 then
-			return 0
-		end
-		local decayFactor = 1 - math.clamp(tonumber(decay) or 0, 0, 1)
-		return math.floor(base * (sizeMulti or 1) * getMutationMultiplier(mutation) * decayFactor)
-	end
-
-	local function getStealNet()
-		local net = nil
-		pcall(function()
-			net = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-		end)
-		return net
-	end
-
-	local function isNight()
-		local night = game.ReplicatedStorage:FindFirstChild("Night")
-		return night and night.Value == true
-	end
-
-	local function getPlotLabel(plot)
-		local owner = plot:GetAttribute("Owner")
-		if typeof(owner) == "string" and owner ~= "" then
-			return owner .. "'s Garden"
-		end
-		local ownerId = getPlotOwnerUserId(plot)
-		if ownerId then
-			local ownerPlayer = Players:GetPlayerByUserId(ownerId)
-			if ownerPlayer then
-				return ownerPlayer.DisplayName .. "'s Garden"
-			end
-		end
-		return plot.Name
-	end
-
-	local function getPlotCenter(plot)
-		if not plot then return nil end
-		local ref = plot:FindFirstChild("PlotSizeReference")
-		if ref then return ref.Position end
-		local sp = plot:FindFirstChild("SpawnPoint")
-		if sp then return sp.Position end
-		local part = plot:FindFirstChildWhichIsA("BasePart", true)
-		return part and part.Position
-	end
-
-	local function getModelPos(model)
-		if not model then return nil end
-		if model:IsA("BasePart") then return model.Position end
-		if model.PrimaryPart then return model.PrimaryPart.Position end
-		local part = model:FindFirstChild("HarvestPart") or model:FindFirstChildWhichIsA("BasePart", true)
-		return part and part.Position
-	end
-
-	local function isStealableCrop(obj)
-		local age = obj:GetAttribute("Age")
-		local maxAge = obj:GetAttribute("MaxAge")
-		if typeof(age) ~= "number" or typeof(maxAge) ~= "number" then
-			return true
-		end
-		return age >= maxAge
-	end
-
-	local function isFruitVisible(model)
-		if not model or not model.Parent then
-			return false
-		end
-		-- HarvestPart in this game remains transparency=1 even for fully grown fruits.
-		-- So we check if there are visible BaseParts in the model (e.g. fruit meshes/parts).
-		local hasVisiblePart = false
-		for _, desc in model:GetChildren() do
-			if desc:IsA("BasePart") and desc.Name ~= "HarvestPart" and desc.Name ~= "Base" then
-				if desc.Transparency < 0.95 then
-					hasVisiblePart = true
-					break
+				if rotateGradient and grad and grad.Enabled then
+					startGradientRotation()
 				end
-			end
-		end
-		if not hasVisiblePart then
-			local hp = model:FindFirstChild("HarvestPart") or model:FindFirstChild("Base")
-			if hp and hp:IsA("BasePart") and hp.Transparency < 0.95 then
-				hasVisiblePart = true
-			end
-		end
-		return hasVisiblePart
-	end
+			end,
+			SFlag = 'RG',
+		})
 
-	local stealGardenDropdown = nil
-
-	local function buildGardenList()
-		local list = {}
-		local gardens = workspace:FindFirstChild("Gardens")
-		if gardens then
-			for _, plot in gardens:GetChildren() do
-				table.insert(list, getPlotLabel(plot))
-			end
-			table.sort(list)
-		end
-		return list
-	end
-
-	local function refreshStealGardenList()
-		local list = buildGardenList()
-		if stealGardenDropdown and stealGardenDropdown.SetOptions then
-			pcall(function()
-				stealGardenDropdown:SetOptions(list)
-			end)
-		end
-		return list
-	end
-
-	local function updateStealDisplay(best, total, statusMsg, footnote)
-		if not stealBestParagraph then
-			return
-		end
-		if statusMsg then
-			setHubParagraph(stealBestParagraph, statusMsg, "Best Target")
-			return
-		end
-		if not best then
-			setHubParagraph(stealBestParagraph, '<font color="rgb(180,180,190)">No ripe fruits found.</font>\n<font color="rgb(120,200,255)">Scanning gardens...</font>', "Best Target")
-			return
-		end
-		local title = string.format("%s · %s", best.seedName, best.mutation)
-		local content = string.format(
-			'<font color="rgb(110,255,140)">Price: ¢%s</font>\n<font color="rgb(255,200,120)">Weight: %.2f kg</font>\n<font color="rgb(160,200,255)">Garden: %s</font>\n<font color="rgb(200,200,210)">Distance: %dm</font>\n<font color="rgb(140,140,150)">Scanned: %d fruits</font>',
-			formatStealMoney(best.price),
-			best.weight,
-			best.plotLabel,
-			math.floor(best.distance),
-			total or 0
-		)
-		if footnote then
-			content = content .. "\n\n" .. footnote
-		end
-		setHubParagraph(stealBestParagraph, content, title)
-	end
-
-	local function buildStealTargetSet()
-		local set = {}
-		if stealTargetPlots == "" then
-			return set, true
-		end
-		for entry in (stealTargetPlots .. ","):gmatch("([^,]+),") do
-			set[entry:match("^%s*(.-)%s*$")] = true
-		end
-		return set, false
-	end
-
-	local function scanStealTargets(myPos)
-		local results = {}
-		local gardens = workspace:FindFirstChild("Gardens")
-		if not gardens then
-			return results
-		end
-		local targetSet, targetAll = buildStealTargetSet()
-		for _, plot in gardens:GetChildren() do
-			if isPlotOwnedByLocalPlayer(plot) then
-				continue
-			end
-			if not targetAll and not targetSet[getPlotLabel(plot)] then
-				continue
-			end
-			local plants = plot:FindFirstChild("Plants")
-			if not plants then
-				continue
-			end
-			local plotLabel = getPlotLabel(plot)
-			local plotOwnerId = getPlotOwnerUserId(plot)
-			if stealCheckOwner and isPlotOwnerInGarden(plot, plotOwnerId) then
-				continue
-			end
-			for _, plant in plants:GetChildren() do
-				local userId = tonumber(plant:GetAttribute("UserId")) or tonumber(plant.Name:match("^(%d+)_"))
-				local plantId = plant:GetAttribute("PlantId") or plant.Name:match("^%d+_(.+)$")
-				if not userId or not plantId or userId == localPlayer.UserId then
-					continue
-				end
-				if stealCheckOwner and userId ~= plotOwnerId and isPlotOwnerInGarden(plot, userId) then
-					continue
-				end
-				local seedName = plant:GetAttribute("SeedName") or getseedname(plant) or ""
-				local fruitsFolder = plant:FindFirstChild("Fruits")
-				if fruitsFolder then
-					for _, fruit in fruitsFolder:GetChildren() do
-						if not isStealableCrop(fruit) or not isFruitVisible(fruit) then
-							continue
-						end
-						local fruitId = fruit:GetAttribute("FruitId") or fruit.Name:match("^%d+_%d+_(.+)$") or ""
-						local key = string.format("%d_%s_%s", userId, plantId, fruitId)
-						if stealRecent[key] and os.clock() - stealRecent[key] < stealRecentSec then
-							continue
-						end
-						local mutation = fruit:GetAttribute("Mutation") or "None"
-						local sizeMulti = fruit:GetAttribute("SizeMultiplier") or fruit:GetAttribute("SizeMulti") or 1
-						local decay = tonumber(fruit:GetAttribute("DecayAlpha")) or 0
-						local price = getStealEstPrice(seedName, sizeMulti, mutation, decay)
-						local weight = getweightkg(fruit, seedName)
-						local pos = getModelPos(fruit)
-						local distance = myPos and pos and (pos - myPos).Magnitude or 99999
-						local basePrice = getStealEstPrice(seedName, sizeMulti, "None", decay)
-						table.insert(results, {
-							userId = userId,
-							plantId = plantId,
-							fruitId = fruitId,
-							seedName = seedName,
-							mutation = mutation,
-							price = price,
-							weight = weight,
-							distance = distance,
-							mutationScore = math.max(0, price - basePrice),
-							pos = pos,
-							plot = plot,
-							plotLabel = plotLabel,
-							model = fruit,
-						})
+		a:Toggle({
+			Title = 'Glow',
+			Description = 'Shine on the ui.',
+			CallBack = function (v)
+				if v then
+					glow = true
+					for _, glowChild in ipairs(safeGetChildren(window.clipframe)) do
+						pcall(function()
+							if glowChild:IsA("ImageLabel") then
+								tweenservice:Create(glowChild, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 0.8}):Play()
+							end
+						end)
 					end
-				elseif isStealableCrop(plant) and isFruitVisible(plant) then
-					local key = string.format("%d_%s_", userId, plantId)
-					if stealRecent[key] and os.clock() - stealRecent[key] < stealRecentSec then
-						continue
+					window.pages.v0.Visible = false
+
+					window.pages.clipframe.v1.Visible = false
+					window.pages.clipframe.v1.Visible = false
+
+					--		window.shadow.ImageLabel.Visible = false
+					window.shadow.glow.Visible = true
+					window.shadow.glow1.Visible = true
+
+				else
+					glow = false
+					for _, glowChild in ipairs(safeGetChildren(window.clipframe)) do
+						pcall(function()
+							if glowChild:IsA("ImageLabel") then
+								tweenservice:Create(glowChild, TweenInfo.new(0.5, Enum.EasingStyle.Exponential),{ImageTransparency = 1}):Play()
+							end
+						end)
 					end
-					local mutation = plant:GetAttribute("Mutation") or "None"
-					local sizeMulti = plant:GetAttribute("SizeMultiplier") or plant:GetAttribute("SizeMulti") or 1
-					local decay = tonumber(plant:GetAttribute("DecayAlpha")) or 0
-					local price = getStealEstPrice(seedName, sizeMulti, mutation, decay)
-					local weight = getweightkg(plant, seedName)
-					local pos = getModelPos(plant)
-					local distance = myPos and pos and (pos - myPos).Magnitude or 99999
-					local basePrice = getStealEstPrice(seedName, sizeMulti, "None", decay)
-					table.insert(results, {
-						userId = userId,
-						plantId = plantId,
-						fruitId = "",
-						seedName = seedName,
-						mutation = mutation,
-						price = price,
-						weight = weight,
-						distance = distance,
-						mutationScore = math.max(0, price - basePrice),
-						pos = pos,
-						plot = plot,
-						plotLabel = plotLabel,
-						model = plant,
+
+					--	window.shadow.ImageLabel.Visible = true
+					window.shadow.glow.Visible = false
+					window.shadow.glow1.Visible = false
+
+					if bluron then
+						window.pages.v0.Visible = false
+					else
+						window.pages.v0.Visible = true
+						window.pages.clipframe.v1.Visible = true
+						window.pages.clipframe.v1.Visible = true
+					end
+				end
+			end,
+			SFlag = 'GLW',
+		})
+
+		a:Toggle({
+			Title = 'Blur',
+			Description = 'Make sure your graphics are above 8.',
+			CallBack = function (v)
+				if v then
+					window.shadow.ImageLabel.Visible = false
+					window.BackgroundTransparency = 0.45
+
+					window.pages.v1.Visible = false
+					window.pages.v0.Visible = false
+
+					window.pages.clipframe.v1.Visible = false
+					window.pages.clipframe.v0.Visible = false
+
+					syde:BindFrame(window, {
+						Transparency = 0.98;
+						BrickColor = BrickColor.new('Institutional white');
+					})
+
+					createBlurDepthOfField()
+					bluron = true
+
+				else
+					window.shadow.ImageLabel.Visible = true
+					window.BackgroundTransparency = 0
+
+					window.pages.v1.Visible = true
+					window.pages.v0.Visible = true
+
+					window.pages.clipframe.v1.Visible = true
+					window.pages.clipframe.v0.Visible = true
+
+					syde:UnbindFrame(window)
+					destroyBlurDepthOfField()
+					bluron = false
+				end
+			end,
+			SFlag = 'BLUR',
+		})
+
+
+		a:Slider({
+			Title = 'Modifiers',
+			Sliders = {
+				{
+					Title = 'DS Density',
+					Range = {0, 1},
+					Increment = 0.1,
+					StarterValue = window.shadow.ImageLabel.ImageTransparency,
+					CallBack = function(v)
+						tweenservice:Create(window.shadow.ImageLabel, TweenInfo.new(0.65, Enum.EasingStyle.Exponential), {ImageTransparency = v}):Play()
+					end,
+					SFlag = 'GDensity',
+					SettingConfig = true
+				},
+				{
+					Title = 'Drag Smoothness',
+					Range = {0, 1},
+					Increment = 0.1,
+					StarterValue = dragSpeed,
+					CallBack = function(v)
+						dragSpeed = v
+					end,
+					SFlag = 'DSmoothness',
+					SettingConfig = true
+				},
+			}
+		})
+
+		a:Toggle({
+			Title = 'Wallpaper';
+			Description = 'Displays personalized wallpaper';
+			Value = LockToScreen,
+			CallBack = function (v)
+				if v then
+					window.wallpaper.Visible = true
+					window.pages.clipframe.v0.Visible = false
+					window.pages.clipframe.v1.Visible = false
+
+					window.pages.v0.Visible = false
+					window.pages.v1.Visible = false
+					window.wallpaper.ison.Value = true
+				else
+					window.wallpaper.Visible = false
+
+					window.wallpaper.ison.Value = false
+
+					if bluron then
+						window.pages.clipframe.v0.Visible = false
+						window.pages.clipframe.v1.Visible = false
+						window.pages.v0.Visible = false
+						window.pages.v1.Visible = false
+					else
+						window.pages.clipframe.v0.Visible = true
+						window.pages.clipframe.v1.Visible = true
+
+						window.pages.v0.Visible = true
+						window.pages.v1.Visible = true
+					end
+				end
+			end,
+			SFlag = 'WALLP',
+		})
+
+		a:TextInput({
+			Title = 'Wallpaper ID';
+			NumberOnly = true;
+			PlaceHolder = 'Input your wallpaper ID here.';
+			CallBack = function (v)
+				if v then
+					window.wallpaper.Image = 'rbxassetid://'..v
+					syde:Toast({
+						Content = 'Wallpaper applied.'
 					})
 				end
 			end
-		end
-		return results
-	end
+		})
 
-	local function sortStealTargets(targets)
-		table.sort(targets, function(a, b)
-			if stealPriority == "Highest Price" then
-				if a.price ~= b.price then return a.price > b.price end
-			elseif stealPriority == "Highest Weight" then
-				if a.weight ~= b.weight then return a.weight > b.weight end
-			elseif stealPriority == "Price per kg" then
-				local aRatio = a.weight > 0 and a.price / a.weight or 0
-				local bRatio = b.weight > 0 and b.price / b.weight or 0
-				if aRatio ~= bRatio then return aRatio > bRatio end
-			elseif stealPriority == "Nearest" then
-				if a.distance ~= b.distance then return a.distance < b.distance end
-			elseif stealPriority == "Best Mutation" then
-				if a.mutationScore ~= b.mutationScore then return a.mutationScore > b.mutationScore end
-			end
-			if a.price ~= b.price then return a.price > b.price end
-			return a.distance < b.distance
-		end)
-	end
 
-	local function cleanupStealMovement(hrp, hum)
-		if hum then hum.PlatformStand = false end
-		if hrp then
-			local bv = hrp:FindFirstChild("SimpleStealBV")
-			if bv then bv:Destroy() end
-			local bg = hrp:FindFirstChild("SimpleStealBG")
-			if bg then bg:Destroy() end
-		end
-	end
+		a:Toggle({
+			Title = 'LockToScreen',
+			Description = 'Prevents UI from moving off screen.',
+			Value = LockToScreen,
+			CallBack = function (v)
+				LockToScreen = v
+			end,
+			SFlag = 'LS'
+		})
 
-	local function moveToPosition(targetPos, hrp, hum)
-		if not hrp or not targetPos then
-			return false
-		end
-		if stealMode == "Teleport" then
-			safeTeleport(CFrame.new(targetPos))
-			task.wait(0.08)
-			return true
-		end
-		local dist = (targetPos - hrp.Position).Magnitude
-		local duration = math.max(0.15, dist / stealSpeed)
-		if hum then hum.PlatformStand = true end
-		local bv = hrp:FindFirstChild("SimpleStealBV") or Instance.new("BodyVelocity")
-		bv.Name = "SimpleStealBV"
-		bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-		bv.Velocity = Vector3.new(0, 0, 0)
-		bv.Parent = hrp
-		local bg = hrp:FindFirstChild("SimpleStealBG") or Instance.new("BodyGyro")
-		bg.Name = "SimpleStealBG"
-		bg.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-		bg.CFrame = hrp.CFrame
-		bg.Parent = hrp
-		local tween = TS:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-		local done = false
-		local conn = tween.Completed:Connect(function()
-			done = true
-		end)
-		tween:Play()
-		while not done and stealRunning do
-			task.wait(0.05)
-		end
-		conn:Disconnect()
-		if not stealRunning then
-			tween:Cancel()
-			cleanupStealMovement(hrp, hum)
-			return false
-		end
-		return true
-	end
-
-	local function shouldUseStealMax()
-		return stealMaxEnabled and stealMode ~= "Bypass Method [NEW BEST!]"
-	end
-
-	local function hasReachedStealMax(stolen)
-		return shouldUseStealMax() and stolen >= stealMax
-	end
-
-	local function returnStealHome(hrp, hum, origCf)
-		if not hrp or not origCf then
-			return
-		end
-		cleanupStealMovement(hrp, hum)
-		if stealMode == "Fly" then
-			moveToPosition(origCf.Position + Vector3.new(0, 2, 0), hrp, hum)
-			hrp.CFrame = origCf
-		elseif stealMode == "Teleport" then
-			safeTeleport(origCf)
-		end
-	end
-
-	local function attemptSteal(net, target, hrp, hum)
-		if not hrp then
-			return false
-		end
-		local savedCf = hrp.CFrame
-		local myFarm = getPlayerFarm()
-		local myCenter = getPlotCenter(myFarm)
-		local targetPos = target.pos and (target.pos + Vector3.new(0, 2, 0)) or getPlotCenter(target.plot)
-		local initCarry = localPlayer:GetAttribute("StolenCarryValue") or 0
-		local initCarrying = localPlayer:GetAttribute("CarryingStolenFruit")
-
-		if stealMode == "Bypass Method [NEW BEST!]" then
-			pcall(function()
-				net.Steal.BeginSteal:Fire(target.userId, target.plantId, target.fruitId)
-			end)
-			pcall(function()
-				net.Steal.CompleteSteal:Fire()
-			end)
-		elseif stealMode == "Teleport" then
-			if targetPos then
-				safeTeleport(CFrame.new(targetPos))
-			end
-			pcall(function()
-				net.Steal.BeginSteal:Fire(target.userId, target.plantId, target.fruitId)
-			end)
-			if myCenter then
-				safeTeleport(CFrame.new(myCenter + Vector3.new(0, 3, 0)))
-			end
-			task.wait(0.05)
-			pcall(function()
-				net.Steal.CompleteSteal:Fire()
-			end)
-			safeTeleport(savedCf)
-		else
-			moveToPosition(targetPos, hrp, hum)
-			pcall(function()
-				net.Steal.BeginSteal:Fire(target.userId, target.plantId, target.fruitId)
-			end)
-			if myCenter then
-				moveToPosition(myCenter + Vector3.new(0, 3, 0), hrp, hum)
-			end
-			pcall(function()
-				net.Steal.CompleteSteal:Fire()
-			end)
-			if stealMode == "Fly" then
-				hrp.CFrame = savedCf
-			end
-		end
-
-		task.wait(0.2)
-		local carry = localPlayer:GetAttribute("StolenCarryValue") or 0
-		local carrying = localPlayer:GetAttribute("CarryingStolenFruit")
-		local modelGone = not target.model or not target.model.Parent or not target.model:IsDescendantOf(workspace)
-		if carry > initCarry or (carrying and not initCarrying) or modelGone then
-			local key = string.format("%d_%s_%s", target.userId, target.plantId, target.fruitId)
-			stealRecent[key] = os.clock()
-			if webhookHooks.onSteal then
-				pcall(webhookHooks.onSteal, target)
-			end
-			return true
-		end
-		return false
-	end
-
-	local function stealLoop()
-		local net = getStealNet()
-		if not net then
-			stealRunning = false
-			return
-		end
-		local stolen = 0
-		local origCf = nil
-		local char = localPlayer.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp then origCf = hrp.CFrame end
-
-		while stealRunning do
-			if hasReachedStealMax(stolen) then
-				break
-			end
-			char = localPlayer.Character
-			hrp = char and char:FindFirstChild("HumanoidRootPart")
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			local myPos = hrp and hrp.Position
-			local targets = scanStealTargets(myPos)
-			if #targets == 0 then
-				updateStealDisplay(nil, 0)
-				task.wait(1.5)
-				continue
-			end
-			sortStealTargets(targets)
-			local best = targets[1]
-			local waitingNight = stealCheckNight and not isNight()
-			if waitingNight then
-				updateStealDisplay(best, #targets, nil, "Daytime — showing best target.\nSteal attempts resume at night.")
-				task.wait(1.5)
-				continue
-			end
-			updateStealDisplay(best, #targets)
-			local stoleThisPass = false
-			for _, target in targets do
-				if not stealRunning or hasReachedStealMax(stolen) then
-					break
+		a:Toggle({
+			Title = 'Watermark',
+			Description = 'Toggles the draggable watermark display.',
+			Value = true,
+			CallBack = function (v)
+				local wm = ui:FindFirstChild('minihome')
+				if wm then
+					wm.Visible = v
 				end
-				char = localPlayer.Character
-				hrp = char and char:FindFirstChild("HumanoidRootPart")
-				hum = char and char:FindFirstChildOfClass("Humanoid")
-				if not hrp then
-					break
+			end,
+			SFlag = 'WTRMK'
+		})
+
+
+		--// SERVICES
+		local HttpService = game:GetService("HttpService")
+
+		--// CONFIG
+		local isDev = false
+		local baseUrl = isDev and "http://localhost:3000" or "https://syde-auth.vercel.app"
+		local loginUrl = baseUrl .. "/api/login"
+		local VERIFY_ENDPOINT = baseUrl .. "/api/verify?id="
+
+		--// STATE
+		local currentDiscordId = nil
+		local lastCheck = 0
+		local debounceTime = 1.5 -- seconds
+
+		--// FUNCTION: open URL safely
+		local function openURL(url)
+			local success = false
+			pcall(function()
+				if syn and syn.openurl then
+					syn.openurl(url)
+					success = true
+				elseif getgenv().is_sirhurt_closure then
+					game:GetService("GuiService"):OpenBrowserWindow(url)
+					success = true
+				elseif KRNL_LOADED then
+					setclipboard(url)
+					success = true
 				end
-				hub:Notify("Attempting steal: " .. target.seedName .. " (" .. formatCurrencyAmount(target.price, true) .. ")")
-				if attemptSteal(net, target, hrp, hum) then
-					stolen = stolen + 1
-					stoleThisPass = true
-					if shouldUseStealMax() then
-						hub:Notify("Steal successful! (" .. stolen .. "/" .. stealMax .. ")")
-					else
-						hub:Notify("Steal successful!")
+			end)
+
+			if not success and setclipboard then
+				setclipboard(url)
+				syde:Notify({
+					Title = "Link Copied",
+					Content = "OAuth link copied to clipboard. Paste in your browser.",
+					Duration = 5
+				})
+			end
+		end
+
+		--// BUTTON: Open OAuth
+		b:Button({
+			Title = "Connect Discord",
+			Description = "Authenticate your Discord account.",
+			CallBack = function()
+				openURL(loginUrl)
+			end,
+		})
+
+		local function verifyDiscord(id)
+			-- Try Roblox GetAsync first
+			if HttpService.HttpEnabled then
+				local ok, res = pcall(function()
+					return HttpService:GetAsync(VERIFY_ENDPOINT .. id, true)
+				end)
+				if ok and res then
+					local decodedOk, decoded = pcall(function()
+						return HttpService:JSONDecode(res)
+					end)
+					if decodedOk and type(decoded) == "table" and decoded.verified then
+						return true, decoded.discordUsername or nil
 					end
-					updateStealDisplay(target, #targets)
-					if hasReachedStealMax(stolen) then
-						break
+				end
+				return false, nil
+			end
+
+			-- Fallback: executor HTTP
+			local success, result = pcall(function()
+				if syn and syn.request then
+					local r = syn.request({ Url = VERIFY_ENDPOINT .. id, Method = "GET" })
+					local decoded = HttpService:JSONDecode(r.Body)
+					if decoded.verified then
+						return decoded.discordUsername or nil
+					end
+				elseif request then
+					local r = request({ Url = VERIFY_ENDPOINT .. id, Method = "GET" })
+					local decoded = HttpService:JSONDecode(r.Body)
+					if decoded.verified then
+						return decoded.discordUsername or nil
+					end
+				end
+				return nil
+			end)
+
+			if success and result then
+				return true, result
+			end
+
+			return false, nil
+		end
+
+		--// INPUT: Discord ID verification
+		b:TextInput({
+			Title = "Discord ID",
+			PlaceHolder = "Paste your Discord ID after verifying",
+			ClearOnLost = false,
+			CallBack = function(v)
+				currentDiscordId = v
+
+				if not currentDiscordId or currentDiscordId == "" then
+					window.user.headshot.Status.BackgroundColor3 = Color3.fromRGB(255, 101, 104)
+					return
+				end
+
+				-- Debounce
+				if tick() - lastCheck < debounceTime then
+					return
+				end
+				lastCheck = tick()
+
+				-- Show checking
+				window.user.headshot.Status.BackgroundColor3 = Color3.fromRGB(255, 238, 49)
+
+				task.spawn(function()
+					local verified, discordUsername = verifyDiscord(currentDiscordId)
+					if verified then
+						window.user.headshot.Status.BackgroundColor3 = Color3.fromRGB(59, 255, 29)
+						if discordUsername then
+							window.user.headshot.id.username.Text = discordUsername
+						end
+						syde:Notify({
+							Title = "Success",
+							Content = "Discord verified successfully",
+							Duration = 4
+						})
+					else
+						window.user.headshot.Status.BackgroundColor3 = Color3.fromRGB(255, 101, 104)
+						syde:Notify({
+							Title = "Verification Failed",
+							Content = "Discord ID is not verified",
+							Duration = 4
+						})
+					end
+				end)
+			end,
+		})
+
+
+		function syde:SaveSettingsConfig()
+			local Data = {}
+
+
+			for flag, v in pairs(syde.SettingsFlags or {}) do
+
+				if v.Type == "ColorPicker" and v.Color then
+					Data[flag] = syde:ColorPack(v.Color)
+				elseif v.V ~= nil then
+					Data[flag] = v.V
+				elseif v.StarterValue ~= nil then
+					Data[flag] = v.StarterValue
+				else
+					warn("[DEBUG] Skipping flag", flag, "no valid value found")
+				end
+			end
+
+
+			local path = string.format("%s/SettingsConfig.lua", syde.ConfigFolder)
+			local encoded = https:JSONEncode(Data)
+
+			writefile(path, encoded)
+
+			syde:Toast({
+				Content = 'Saved setting config';
+				Duration = 3
+			})
+		end
+
+		function syde:LoadSettingsConfig()
+			local path = string.format("%s/SettingsConfig.lua", syde.ConfigFolder)
+
+			if not isfile(path) then
+
+				syde:Toast({
+					Content = 'No settings found';
+					Duration = 3
+				})
+				return
+			end
+
+			local success, data = pcall(function()
+				return https:JSONDecode(readfile(path))
+			end)
+
+			if not success or typeof(data) ~= "table" then
+				warn("[DEBUG] Failed to decode settings:", data)
+				return
+			end
+
+			for flag, val in pairs(data) do
+				local setting = syde.SettingsFlags and syde.SettingsFlags[flag]
+				if setting then
+					if setting.Set then
+						setting:Set(val)
+					elseif setting.Type == "ColorPicker" and setting.Color then
+						setting.Color = syde:ColorUnpack(val)
+					elseif setting.V ~= nil then
+						setting.Value = val
 					end
 				else
-					hub:Notify("Steal failed / protected.")
-				end
-				cleanupStealMovement(hrp, hum)
-				if stealDelay > 0 then
-					task.wait(stealDelay)
+					warn("[DEBUG] No matching setting flag found for:", flag)
 				end
 			end
-			if not stoleThisPass then
-				task.wait(2)
+
+			syde:Toast({
+				Content = 'Loaded setting config';
+				Duration = 3
+			})
+		end
+
+		-- // Configurations
+		local currentConfigName = syde.ConfigFile or "Config"
+		local selectedConfig
+		local autoloadEnabled = syde:GetAutoLoad() and true or false
+		local autoloadButtonRef
+		local configDropdownData
+
+		local function refreshConfigList()
+			if configDropdownData and configDropdownData.SetOptions then
+				configDropdownData:SetOptions(syde:ListConfigs() or {})
 			end
 		end
 
-		char = localPlayer.Character
-		hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		cleanupStealMovement(hrp, hum)
-		if hasReachedStealMax(stolen) then
-			hub:Notify("Max fruits limit reached. Returning home.")
-			returnStealHome(hrp, hum, origCf)
-		elseif origCf and hrp and stealMode == "Fly" then
-			hrp.CFrame = origCf
+		local function updateAutoLoadLabel()
+			if autoloadButtonRef and autoloadButtonRef:FindFirstChild('title') then
+				autoloadButtonRef.title.Text = autoloadEnabled and 'AutoLoad: ON' or 'AutoLoad: OFF'
+				autoloadButtonRef.title.Size = UDim2.new(0, 120, 0, 35)
+			end
 		end
-		updateStealDisplay(nil, 0)
-		stealRunning = false
-	end
 
-	local scanThread = nil
-	local function startStealScanLoop()
-		if scanThread then
-			return
+		local function resolveConfigName()
+			if selectedConfig and selectedConfig ~= "" then return selectedConfig end
+			if currentConfigName and currentConfigName ~= "" then return currentConfigName end
+			return syde.ConfigFile
 		end
-		scanThread = task.spawn(function()
-			while true do
-				if not stealRunning then
-					local char = localPlayer.Character
-					local hrp = char and char:FindFirstChild("HumanoidRootPart")
-					local myPos = hrp and hrp.Position
-					local targets = scanStealTargets(myPos)
-					if #targets == 0 then
-						updateStealDisplay(nil, 0)
-					else
-						sortStealTargets(targets)
-						updateStealDisplay(targets[1], #targets)
+
+		a:Button({
+			Title = 'Save',
+			CallBack = function ()
+				local name = (currentConfigName and currentConfigName ~= "") and currentConfigName or syde.ConfigFile
+				syde:SaveConfigAs(name)
+				syde:SaveSettingsConfig()
+				refreshConfigList()
+			end
+		})
+		a:Button({
+			Title = 'Load',
+			CallBack = function ()
+				local name = resolveConfigName()
+				syde:LoadSaveConfig(name)
+				syde:LoadSettingsConfig()
+			end
+		})
+		a:Button({
+			Title = 'AutoLoad',
+			CallBack = function ()
+				autoloadEnabled = not autoloadEnabled
+				syde:SetAutoLoad(autoloadEnabled)
+				updateAutoLoadLabel()
+				if syde.Toast then
+					syde:Toast({ Content = 'AutoLoad: ' .. (autoloadEnabled and 'ON' or 'OFF'), Duration = 3 })
+				end
+			end
+		})
+		a:Button({
+			Title = 'Overwrite',
+			CallBack = function ()
+				local name = resolveConfigName()
+				if not name or name == "" then
+					if syde.Toast then syde:Toast({ Content = 'No config to overwrite', Duration = 3 }) end
+					return
+				end
+				syde:SaveConfigAs(name)
+				syde:SaveSettingsConfig()
+				if syde.Toast then syde:Toast({ Content = 'Overwrote: ' .. name, Duration = 3 }) end
+				refreshConfigList()
+			end
+		})
+
+		-- Arrange the four buttons in a 2x2 grid
+		do
+			local themePage = window.settings.pages:FindFirstChild('Theme')
+			if themePage then
+				local saveBtn = themePage:FindFirstChild('Save')
+				local loadBtn = themePage:FindFirstChild('Load')
+				local autoloadBtn = themePage:FindFirstChild('AutoLoad')
+				local overwriteBtn = themePage:FindFirstChild('Overwrite')
+				autoloadButtonRef = autoloadBtn
+				updateAutoLoadLabel()
+
+				local grid = Instance.new('Frame')
+				grid.Name = 'ConfigButtons'
+				grid.BackgroundTransparency = 1
+				grid.BorderSizePixel = 0
+				grid.Size = UDim2.new(1, -35, 0, 90)
+				grid.Parent = themePage
+
+				local gridLayout = Instance.new('UIGridLayout')
+				gridLayout.CellSize = UDim2.new(0.5, -5, 0, 40)
+				gridLayout.CellPadding = UDim2.new(0, 10, 0, 10)
+				gridLayout.FillDirectionMaxCells = 2
+				gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+				gridLayout.Parent = grid
+
+				for i, btn in ipairs({saveBtn, loadBtn, autoloadBtn, overwriteBtn}) do
+					if btn then
+						btn.Parent = grid
+						btn.LayoutOrder = i
 					end
 				end
-				task.wait(1.5)
 			end
+		end
+
+		a:TextInput({
+			Title = 'Config Name',
+			PlaceHolder = 'Enter config name',
+			ClearOnLost = false,
+			CallBack = function (v)
+				currentConfigName = v
+			end
+		})
+
+		configDropdownData = a:Dropdown({
+			Title = 'Saved Configs',
+			Options = syde:ListConfigs() or {},
+			PlaceHolder = 'Select a config',
+			CallBack = function (v)
+				selectedConfig = v
+			end
+		})
+
+		b:Toggle({
+			Title = 'Anonymous',
+			Description = 'Hides your info in User Info.',
+			CallBack = function (v)
+				if v then
+					window.user.headshot.id.username.Text = '?'
+					window.user.headshot.id.displayname.Text = '@?'
+					window.user.headshot.Image = 'rbxassetid://139956761561818'
+				else
+					SetUserInfo()
+				end
+			end,
+			SFlag = 'ANON',
+		})
+
+		c:Paragraph({
+			Title = 'Status',
+			Content = 'Your Up To Date!'
+		})
+
+
+		local startTime = tick()
+
+		local uptimeParagraph = c:Paragraph({
+			Title = 'Session UpTime',
+			Content = 'Calculating...'
+		})
+
+		local function formatTime(seconds)
+			local days = math.floor(seconds / 86400)
+			seconds = seconds % 86400
+			local hours = math.floor(seconds / 3600)
+			seconds = seconds % 3600
+			local minutes = math.floor(seconds / 60)
+			seconds = math.floor(seconds % 60)
+
+			return string.format("%02d:%02d:%02d:%02d", days, hours, minutes, seconds)
+		end
+
+		local lastUptimeRefresh = 0
+
+		ss = syde:AddConnection(runservice.Heartbeat, function()
+			pcall(function()
+				local now = tick()
+				if now - lastUptimeRefresh < 1 then
+					return
+				end
+				lastUptimeRefresh = now
+
+				if not uptimeParagraph or not uptimeParagraph.Set then
+					return
+				end
+				if not safeGuiAlive(uptimeParagraph.Instance) then
+					return
+				end
+
+				local uptime = now - startTime
+				local formatted = formatTime(uptime)
+				uptimeParagraph:Set("Session Uptime: " .. formatted, "Session UpTime")
+			end)
 		end)
+
 	end
 
-	hub:CreateModule("Main", {
-		name = "Auto Steal",
-		badge = {text = "BETA", color = Color3.fromRGB(80, 180, 255)},
-		on = false,
-		bind = "None",
-		desc = "Steal fruits.",
-		callback = function(enabled)
-			stealRunning = enabled
-			if enabled then
-				if stealThread then pcall(task.cancel, stealThread) end
-				stealThread = task.spawn(stealLoop)
-			else
-				if stealThread then
-					pcall(task.cancel, stealThread)
-					stealThread = nil
+
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		screenSize = workspace.CurrentCamera.ViewportSize
+		isMobile = userinput.TouchEnabled
+		updateLayout()
+	end)
+
+	updateLayout()
+
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout)
+	userinput:GetPropertyChangedSignal("TouchEnabled"):Connect(updateLayout)
+
+	--@@Tabs
+	local tbdata = {
+		first = false,
+		selected = false
+	}
+
+	function tbdata:InitTab(tab)
+		-- bootstrap Home-mode once so first-created tabs don't auto-open
+
+		if Data.Home.Enabled then
+			if not tbdata.__homeBootstrapped then
+				tbdata.__homeBootstrapped = true
+				tbdata.first = "Home"
+				tbdata.homeActive = true
+				-- hide all normal pages on boot
+				for _, temp in ipairs(pages:GetChildren()) do
+					if temp:IsA("ScrollingFrame") then
+						temp.Visible = false
+					end
 				end
-				local char = localPlayer.Character
-				local hum = char and char:FindFirstChildOfClass("Humanoid")
-				local hrp = char and char:FindFirstChild("HumanoidRootPart")
-				cleanupStealMovement(hrp, hum)
+				-- ensure homepage is visible if present
+				if window and window.pages and window.pages.home then
+					window.pages.home.Visible = true
+				end
 			end
-		end,
-		opts = {
-			{type = "paragraph", title = "Best Target", content = "Waiting for scan...", onCreate = function(widget)
-				stealBestParagraph = widget
-				enableParagraphRichText(widget)
-				startStealScanLoop()
-			end},
-			{type = "dropdown", label = "Priority", value = "Highest Price", list = {"Highest Price", "Highest Weight", "Price per kg", "Nearest", "Best Mutation"}, callback = function(value)
-				stealPriority = value
-			end},
-			{type = "dropdown", label = "Move Mode", value = "Bypass Method [NEW BEST!]", list = {"Bypass Method [NEW BEST!]", "Fly", "Teleport"}, callback = function(value)
-				stealMode = value
-			end},
-			{type = "slider", label = "Fly Speed", value = 180, min = 50, max = 500, suffix = "", callback = function(value)
-				stealSpeed = value
-			end},
-			{type = "checkbox", label = "Limit Max Fruits", value = false, callback = function(value)
-				stealMaxEnabled = value
-			end},
-			{type = "slider", label = "Max Fruits Limit", value = 50, min = 1, max = 200, suffix = "", callback = function(value)
-				stealMax = value
-			end},
-			{type = "slider", label = "Steal Delay", value = 4, min = 0, max = 30, suffix = "ds", callback = function(value)
-				stealDelay = value / 10
-			end},
-			{type = "checkbox", label = "Check Night", value = true, callback = function(value)
-				stealCheckNight = value
-			end},
-			{type = "checkbox", label = "Skip If Owner Present", value = true, callback = function(value)
-				stealCheckOwner = value
-			end},
-			(function()
-				local gardenOpt = {
-					type = "multiselect",
-					label = "Target Gardens",
-					value = "",
-					list = buildGardenList(),
-					callback = function(value)
-						stealTargetPlots = value
-					end,
-					onCreate = function(widget)
-						stealGardenDropdown = widget
-						refreshStealGardenList()
-					end,
-				}
-				task.defer(function()
-					refreshStealGardenList()
-					local gardens = workspace:FindFirstChild("Gardens")
-					if gardens then
-						gardens.ChildAdded:Connect(refreshStealGardenList)
-						gardens.ChildRemoved:Connect(refreshStealGardenList)
-						for _, plot in gardens:GetChildren() do
-							plot:GetAttributeChangedSignal("Owner"):Connect(refreshStealGardenList)
-							plot:GetAttributeChangedSignal("OwnerUserId"):Connect(refreshStealGardenList)
+		end
+
+
+		local isFirstTab = not tbdata.first 
+
+		local tdata = {
+			Title = tab.Title;
+			Locked = tab.Locked or false;
+			Key = tab.Key;
+		}
+
+		local LockedFrames = {}
+
+		--[Tab Setup]
+		local Tab = tabs.btn:Clone()
+		Tab.Visible = true
+		Tab.Parent = tabs
+		Tab.title.Text = tdata.Title
+		Tab.Name = tdata.Title
+
+		Tab.title.TextTransparency = 1
+		Tab.indicator.BackgroundTransparency = 1
+
+		--[Page Setup]
+		local Page = pages.page:Clone()
+		Page.Visible = false
+		Page.Parent = pages
+		Page.Name = tdata.Title
+
+		local defaultParent = Page 
+
+		local function setInternalParent(newParent)
+			defaultParent = newParent
+		end
+
+		for _, temp in ipairs(Page:GetChildren()) do
+			if temp:IsA("Frame") then
+				temp:Destroy()
+			end
+		end
+
+
+		local pageLayoutQueued = false
+		local function queuePageLayout()
+			if pageLayoutQueued then
+				return
+			end
+			pageLayoutQueued = true
+			task.defer(function()
+				pageLayoutQueued = false
+				pcall(function()
+					syde:updateLayout(Page, 7)
+				end)
+				task.delay(0.12, function()
+					pcall(function()
+						syde:updateLayout(Page, 7)
+					end)
+				end)
+			end)
+		end
+
+		Page.ChildAdded:Connect(function(child)
+			pcall(function()
+				if not child or not child:IsA("GuiObject") then
+					return
+				end
+				queuePageLayout()
+				safeOnPropertyChanged(child, "Size", queuePageLayout)
+				safeOnPropertyChanged(child, "Visible", queuePageLayout)
+			end)
+		end)
+
+		Page.ChildRemoved:Connect(function()
+			queuePageLayout()
+		end)
+
+		safeOnPropertyChanged(Page, "Size", queuePageLayout)
+		queuePageLayout()
+
+
+
+		local function ChangeName(Name)
+			tweenservice:Create(pages.clipframe.title, TweenInfo.new(0), { TextTransparency = pages.clipframe.title.TextTransparency }):Play()
+			tweenservice:Create(pages.clipframe.title, TweenInfo.new(0), { Position = pages.clipframe.title.Position }):Play()
+
+			local fadeOut = tweenservice:Create(pages.clipframe.title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), { TextTransparency = 1 })
+			local moveUp = tweenservice:Create(pages.clipframe.title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { Position = UDim2.new(0, 5,0.5, -25) })
+
+			fadeOut:Play()
+			moveUp:Play()
+			task.wait(0.2)
+
+			pages.clipframe.title.Position = UDim2.new(0, 5,0.5, 25)
+
+			pages.clipframe.title.Text = Name
+
+			local moveDown = tweenservice:Create(pages.clipframe.title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { Position = UDim2.new(0, 5,0.5, 0) })
+			local fadeIn = tweenservice:Create(pages.clipframe.title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { TextTransparency = 0 })
+
+			moveDown:Play()
+			fadeIn:Play()
+		end
+
+		if isFirstTab then
+			ChangeName(tdata.Title)
+			Page.Visible = true
+			tbdata.first = tdata.Title
+		end
+
+		if tbdata.first then
+			tweenservice:Create(Tab.title, TweenInfo.new(2, Enum.EasingStyle.Exponential), { TextTransparency = 0.52 }):Play()
+			tweenservice:Create(Tab, TweenInfo.new(2, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.45 }):Play()
+			tweenservice:Create(Tab.indicator, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+			tweenservice:Create(Tab.indicator.glow, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+			tweenservice:Create(Tab, TweenInfo.new(2, Enum.EasingStyle.Quart), { Size = UDim2.new(0, Tab.title.TextBounds.X + 30,0, 35) }):Play()
+			--	tweenservice:Create(Tab.indicator.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+		else
+			tbdata.first = tdata.Title
+			tweenservice:Create(Tab.title, TweenInfo.new(2, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+			tweenservice:Create(Tab, TweenInfo.new(2, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+			tweenservice:Create(Tab.indicator, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+			tweenservice:Create(Tab.indicator, TweenInfo.new(2, Enum.EasingStyle.Exponential), { BackgroundColor3 = syde.theme.Accent }):Play()
+			tweenservice:Create(Tab.indicator.glow, TweenInfo.new(2, Enum.EasingStyle.Exponential), { ImageColor3 = syde.theme.Accent }):Play()
+			tweenservice:Create(Tab, TweenInfo.new(2, Enum.EasingStyle.Quart), { Size = UDim2.new(0, Tab.title.TextBounds.X + 80,0, 35) }):Play()
+			--	tweenservice:Create(Tab.indicator.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.6 }):Play()
+		end
+
+
+		local positionTweenInfo = TweenInfo.new(0.7, Enum.EasingStyle.Quart)
+		local colorTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Exponential)
+		local HomeButton = (window and window.tabs and window.tabs.Home) and window.tabs.Home or nil
+		local HomePage = (window and window.pages and window.pages.home) and window.pages.home or nil
+
+		local function ApplyHomeButtonStyle(isActive)
+			if not HomeButton or not HomeButton.homeicon:FindFirstChild("ImageLabel") then
+				return
+			end
+
+			if isActive then
+				--	tweenservice:Create(HomeButton.text, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+				tweenservice:Create(HomeButton.homeicon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.45 }):Play()
+				tweenservice:Create(HomeButton.homeicon.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+			else
+				--	tweenservice:Create(HomeButton.text, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0.67 }):Play()
+				tweenservice:Create(HomeButton.homeicon, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.85 }):Play()
+				tweenservice:Create(HomeButton.homeicon.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.67 }):Play()
+			end
+		end
+
+		local isInit = true
+
+		local function ApplyTabStyle(tabButton, isSelected)
+			local targetTextTransparency = isSelected and 0 or 0.6
+			local targetBackgroundTransparency = isSelected and 0 or 0.45
+			local targetTransparency = isSelected and 0 or 1
+			local targetColor = isSelected and syde.theme.Accent or Color3.fromRGB(29, 29, 29)
+			local targetSize = isSelected and UDim2.new(0, tabButton.title.TextBounds.X + 80,0, 35) or UDim2.new(0, tabButton.title.TextBounds.X + 50,0, 35)
+
+
+			if isInit then
+				task.spawn(function()
+					for _, v in ipairs(tabs:GetChildren()) do
+						if v:IsA("Frame") then
+							tweenservice:Create(v, TweenInfo.new(0.75, Enum.EasingStyle.Quart), { Size = UDim2.new(0, v.title.TextBounds.X + 100,0, 30) }):Play()
+							task.wait(0.15)
+							tweenservice:Create(tabButton, TweenInfo.new(0.75, Enum.EasingStyle.Quart), { Size = targetSize }):Play()
+							isInit = false
 						end
 					end
 				end)
-				return gardenOpt
-			end)(),
-			{type = "button", label = "Refresh Gardens", callback = function()
-				refreshStealGardenList()
-				hub:Notify("Garden list refreshed (" .. #buildGardenList() .. " plots)")
-			end},
-		}
-	})
-end)()
-local buyrunning = false
-local buydelay = 1
-local buylist = ""
-local function dobuy()
-	table.clear(purchasedCurrentCycle)
-	local virtualMoney = getPlayerCurrency()
-	local list = buylist
-	if list == "" then
-		list = table.concat(gameLists.seeds, ",")
-	end
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	for name in (list .. ","):gmatch("([^,]+),") do
-		local seedName = name:match("^%s*(.-)%s*$")
-		if isinstock(seedName, 1, virtualMoney) then
-			pcall(function() Networking.SeedShop.PurchaseSeed:Fire(seedName) end)
-			purchasedCurrentCycle[seedName] = (purchasedCurrentCycle[seedName] or 0) + 1
-			local price = getItemPrice(seedName, 1)
-			virtualMoney = virtualMoney - price
+
+			end
+
+
+			tweenservice:Create(tabButton, positionTweenInfo, { Size = targetSize }):Play()
+			tweenservice:Create(tabButton, colorTweenInfo, { BackgroundTransparency = targetBackgroundTransparency, }):Play()
+			tweenservice:Create(tabButton.title, colorTweenInfo, { TextTransparency = targetTextTransparency }):Play()
+			tweenservice:Create(tabButton.indicator.glow, colorTweenInfo, { ImageColor3 = targetColor }):Play()
+			tweenservice:Create(tabButton.indicator.glow, colorTweenInfo, { ImageTransparency = isSelected and 0.78 or 1 }):Play()
+
+			tweenservice:Create(tabButton.indicator, colorTweenInfo, { BackgroundColor3 = targetColor }):Play()
+			tweenservice:Create(tabButton.indicator, colorTweenInfo, { BackgroundTransparency = isSelected and 0 or 1 }):Play()
+
+
 		end
-		task.wait(0.15)
-	end
-end
-do
-	local speedval = 16
-	local jumpval = 50
-	local infJumpOn = false
-	local flyOn = false
-	local flyspeedval = 60
-	local noclipOn = false
-	local flyConn = nil
-	local noclipConn = nil
-	local infJumpConn = nil
-	local antiVoidOn = false
-	local antiVoidConn = nil
-	local bodyVel = nil
-	local bodyGyro = nil
-	local playerActive = false
-	local function getchar()
-		return localPlayer and localPlayer.Character
-	end
-	local function gethrp()
-		local c = getchar()
-		return c and c:FindFirstChild("HumanoidRootPart")
-	end
-	local function gethum()
-		local c = getchar()
-		return c and c:FindFirstChildOfClass("Humanoid")
-	end
-	local function stopfly()
-		if flyConn then flyConn:Disconnect() flyConn = nil end
-		if bodyVel then bodyVel:Destroy() bodyVel = nil end
-		if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
-		local hum = gethum()
-		if hum then hum.PlatformStand = false end
-	end
-	local function stopnoclip()
-		if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-	end
-	local function stopinfjump()
-		if infJumpConn then infJumpConn:Disconnect() infJumpConn = nil end
-	end
-	local function stopAntiVoid()
-		if antiVoidConn then antiVoidConn:Disconnect() antiVoidConn = nil end
-	end
-	local function startAntiVoid()
-		stopAntiVoid()
-		antiVoidConn = RS.Heartbeat:Connect(function()
-			if not antiVoidOn or not playerActive then
-				return
+		ApplyTabStyle(Tab, isFirstTab)
+
+		if Data.Home.Enabled then
+			ApplyTabStyle(Tab, false)
+		else
+			ApplyTabStyle(Tab, isFirstTab)
+		end
+
+		local function ShowHome()
+			tbdata.homeActive = true
+			tbdata.first = "Home"
+
+			for _, otherPage in ipairs(pages:GetChildren()) do
+				if otherPage:IsA("ScrollingFrame") then
+					otherPage.Visible = false
+				end
 			end
-			local hrp = gethrp()
-			if not hrp then
-				return
+
+			for _, otherTab in ipairs(tabs:GetChildren()) do
+				if otherTab:IsA("Frame") then
+					ApplyTabStyle(otherTab, false)
+					otherTab.interact.Active = true
+				end
 			end
-			local voidY = (workspace.FallenPartsDestroyHeight or -500) + 20
-			if hrp.Position.Y < voidY then
-				local safePos = getGroundUnderPlayer()
-				if not safePos then
-					local farm = getPlayerFarm()
-					if farm then
-						safePos = farm:GetPivot().Position + Vector3.new(0, 5, 0)
+
+			if HomePage then
+				HomePage.Visible = true
+				pcall(function() tweenservice:Create(HomePage, TweenInfo.new(0.45, Enum.EasingStyle.Quint), { BackgroundTransparency = 1 }):Play() end)
+			end
+
+			ApplyHomeButtonStyle(true)
+			window.pages.clipframe.Visible = false
+			--	window.pages.v0.Visible = false
+			--	window.pages.v1.Visible = false
+		end
+
+		local function HideHomeForTab()
+			tbdata.homeActive = false
+
+			if HomePage then
+				pcall(function()
+					HomePage.Visible = false
+					HomePage.BackgroundTransparency = 1
+				end)
+			end
+
+			ApplyHomeButtonStyle(false)
+			window.pages.clipframe.Visible = true
+		end
+
+		if tbdata.first == 'Home' then
+			ShowHome()
+		end
+
+		-- Hook Home button click once (if present)
+		if HomeButton and HomeButton.homeicon:FindFirstChild("interact") and not tbdata.__homeHooked then
+			tbdata.__homeHooked = true
+			HomeButton.homeicon.interact.MouseButton1Click:Connect(function()
+				if tbdata.homeActive then return end 
+
+				-- Force-hide all locked pages
+				local lockedFolder = pages:FindFirstChild("lockedpages")
+				if lockedFolder then
+					for _, lockedPage in ipairs(lockedFolder:GetChildren()) do
+						if lockedPage:IsA("TextButton") then
+							lockedPage.Visible = false
+						end
 					end
 				end
-				if safePos then
-					safeTeleport(CFrame.new(safePos + Vector3.new(0, 4, 0)))
-				end
-			end
-		end)
-	end
-	local function startinfjump()
-		stopinfjump()
-		local UIS = game:GetService("UserInputService")
-		infJumpConn = UIS.JumpRequest:Connect(function()
-			if infJumpOn and playerActive then
-				local hum = gethum()
-				if hum then
-					hum:ChangeState(Enum.HumanoidStateType.Jumping)
-				end
-			end
-		end)
-	end
-	local function startfly()
-		stopfly()
-		local hrp = gethrp()
-		local hum = gethum()
-		if not hrp or not hum then return end
-		hum.PlatformStand = true
-		bodyVel = Instance.new("BodyVelocity")
-		bodyVel.Velocity = Vector3.new(0, 0, 0)
-		bodyVel.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-		bodyVel.Parent = hrp
-		bodyGyro = Instance.new("BodyGyro")
-		bodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-		bodyGyro.P = 1e5
-		bodyGyro.Parent = hrp
-		local cam = workspace.CurrentCamera
-		local UIS = game:GetService("UserInputService")
-		local RS = game:GetService("RunService")
-		flyConn = RS.RenderStepped:Connect(function()
-			if not flyOn or not playerActive or not hrp or not hrp.Parent then
-				stopfly()
-				return
-			end
-			local dir = Vector3.new(0, 0, 0)
-			if UIS:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
-			if UIS:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
-			if UIS:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
-			if UIS:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
-			if UIS:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
-			if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
-			bodyVel.Velocity = dir.Magnitude > 0 and dir.Unit * flyspeedval or Vector3.new(0, 0, 0)
-			bodyGyro.CFrame = cam.CFrame
-		end)
-	end
-	local function startnoclip()
-		stopnoclip()
-		local RS = game:GetService("RunService")
-		noclipConn = RS.Stepped:Connect(function()
-			local char = getchar()
-			if not char or not noclipOn or not playerActive then
-				stopnoclip()
-				return
-			end
-			for _, part in char:GetDescendants() do
-				if part:IsA("BasePart") and part.CanCollide then
-					part.CanCollide = false
-				end
-			end
-		end)
-	end
-	hub:CreateModule("Main", {
-		name = "Player",
-		on = false,
-		bind = "None",
-		desc = "Speed, jump, fly, noclip.",
-		callback = function(enabled)
-			playerActive = enabled
-			if not enabled then
-				stopfly()
-				stopnoclip()
-				stopinfjump()
-				stopAntiVoid()
-				local hum = gethum()
-				if hum then
-					hum.WalkSpeed = 16
-					hum.JumpPower = 50
-				end
+
+				ShowHome()
+			end)
+
+		end
+
+		Tab.interact.MouseButton1Click:Connect(function()
+			if tbdata.first == tdata.Title then return end 
+
+			HideHomeForTab()
+
+
+			local previous = tbdata.first
+			tbdata.first = tdata.Title
+
+			-- Check if both old + new are InitTab tabs
+			local prevPage = pages:FindFirstChild(previous)
+			local newPage  = pages:FindFirstChild(tdata.Title)
+
+			if prevPage and newPage then
+				-- both are regular tabs → animate
+				ChangeName(tdata.Title)
 			else
-				local hum = gethum()
-				if hum then
-					hum.WalkSpeed = speedval
-					hum.UseJumpPower = true
-					hum.JumpPower = jumpval
-				end
-				if infJumpOn then
-					startinfjump()
-				end
-				if flyOn then
-					startfly()
-				end
-				if noclipOn then
-					startnoclip()
-				end
-				if antiVoidOn then
-					startAntiVoid()
+				-- otherwise just snap
+				pages.clipframe.title.Text = tdata.Title
+			end
+
+			-- Hide all pages
+			for _, otherPage in ipairs(pages:GetChildren()) do
+				if otherPage:IsA("ScrollingFrame") or otherPage.Name == "home" then
+					otherPage.Visible = false
 				end
 			end
-		end,
-		opts = {
-			{type = "slider", label = "Walk Speed", value = 16, min = 1, max = 200, suffix = "", callback = function(value)
-				speedval = value
-				if not playerActive then return end
-				local hum = gethum()
-				if hum then hum.WalkSpeed = speedval end
-			end},
-			{type = "slider", label = "Jump Power", value = 50, min = 1, max = 500, suffix = "", callback = function(value)
-				jumpval = value
-				if not playerActive then return end
-				local hum = gethum()
-				if hum then
-					hum.UseJumpPower = true
-					hum.JumpPower = jumpval
-				end
-			end},
-			{type = "toggle", label = "InfJump", value = false, callback = function(enabled)
-				infJumpOn = enabled
-				stopinfjump()
-				if not playerActive then return end
-				if enabled then
-					startinfjump()
-				end
-			end},
-			{type = "toggle", label = "Fly", value = false, callback = function(enabled)
-				flyOn = enabled
-				stopfly()
-				if not playerActive then return end
-				if enabled then
-					startfly()
-				end
-			end},
-			{type = "slider", label = "Fly Speed", value = 60, min = 5, max = 300, suffix = "", callback = function(value)
-				flyspeedval = value
-			end},
-			{type = "toggle", label = "Noclip", value = false, callback = function(enabled)
-				noclipOn = enabled
-				stopnoclip()
-				if not playerActive then return end
-				if enabled then
-					startnoclip()
-				end
-			end},
-			{type = "toggle", label = "Anti Void", value = false, callback = function(enabled)
-				antiVoidOn = enabled
-				stopAntiVoid()
-				if not playerActive then return end
-				if enabled then
-					startAntiVoid()
-				end
-			end},
-		}
-	})
-end
-hub:CreateTab("Auto Buy", "rbxassetid://13429538917")
-hub:CreateModule("Auto Buy", {
-	name = "Seeds",
-	on = false,
-	bind = "None",
-	desc = "Auto buy seeds.",
-	callback = function(enabled)
-		buyrunning = enabled
-		if enabled then
-			purchasedCurrentCycle = {}
-			task.spawn(function()
-				while buyrunning do
-					dobuy()
-					task.wait(buydelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Buy Delay", value = 1, min = 0, max = 30, suffix = "s", callback = function(value)
-			buydelay = value
-		end},
-		{type = "multiselect", label = "Select Seeds", value = "", list = gameLists.seeds, callback = function(value)
-			buylist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "seeds")
-		end},
-		{type = "button", label = "Buy Now", callback = function()
-			dobuy()
-		end},
-	}
-})
-local function dogear()
-	table.clear(purchasedCurrentCycle)
-	local virtualMoney = getPlayerCurrency()
-	local list = gearlist
-	if list == "" then
-		list = table.concat(gameLists.gears, ",")
-	end
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	for name in (list .. ","):gmatch("([^,]+),") do
-		local gearName = name:match("^%s*(.-)%s*$")
-		if isinstock(gearName, 2, virtualMoney) then
-			pcall(function() Networking.GearShop.PurchaseGear:Fire(gearName) end)
-			purchasedCurrentCycle[gearName] = (purchasedCurrentCycle[gearName] or 0) + 1
-			local price = getItemPrice(gearName, 2)
-			virtualMoney = virtualMoney - price
-		end
-		task.wait(0.15)
-	end
-end
-hub:CreateModule("Auto Buy", {
-	name = "Gear",
-	on = false,
-	bind = "None",
-	desc = "Auto buy gear.",
-	callback = function(enabled)
-		gearrunning = enabled
-		if enabled then
-			purchasedCurrentCycle = {}
-			task.spawn(function()
-				while gearrunning do
-					dogear()
-					task.wait(geardelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Buy Delay", value = 1, min = 0, max = 30, suffix = "s", callback = function(value)
-			geardelay = value
-		end},
-		{type = "multiselect", label = "Select Gear", value = "", list = gameLists.gears, callback = function(value)
-			gearlist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "gears")
-		end},
-		{type = "button", label = "Buy Now", callback = function()
-			dogear()
-		end},
-	}
-})
-local proprunning = false
-local propdelay = 1
-local proplist = ""
-local function doprop()
-	table.clear(purchasedCurrentCycle)
-	local virtualMoney = getPlayerCurrency()
-	local list = proplist
-	if list == "" then
-		list = table.concat(gameLists.crates, ",")
-	end
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	for name in (list .. ","):gmatch("([^,]+),") do
-		local propName = name:match("^%s*(.-)%s*$")
-		local cleanProp = propName:gsub("%s*Crate%s*$", "")
-		local targetName = nil
-		if isinstock(propName, 3, virtualMoney) then
-			targetName = propName
-		elseif isinstock(cleanProp, 3, virtualMoney) then
-			targetName = cleanProp
-		end
-		if targetName then
-			pcall(function() Networking.CrateShop.PurchaseCrate:Fire(propName) end)
-			purchasedCurrentCycle[targetName] = (purchasedCurrentCycle[targetName] or 0) + 1
-			local price = getItemPrice(targetName, 3)
-			virtualMoney = virtualMoney - price
-		end
-		task.wait(0.15)
-	end
-end
-hub:CreateModule("Auto Buy", {
-	name = "Crates",
-	on = false,
-	bind = "None",
-	desc = "Auto buy props.",
-	callback = function(enabled)
-		proprunning = enabled
-		if enabled then
-			purchasedCurrentCycle = {}
-			task.spawn(function()
-				while proprunning do
-					doprop()
-					task.wait(propdelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Buy Delay", value = 1, min = 0, max = 30, suffix = "s", callback = function(value)
-			propdelay = value
-		end},
-		{type = "multiselect", label = "Select Crates", value = "", list = gameLists.crates, callback = function(value)
-			proplist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "crates")
-		end},
-		{type = "button", label = "Buy Now", callback = function()
-			doprop()
-		end},
-	}
-})
 
-gardenexpanderrunning = false
-gardenexpanderdelay = 5
-hub:CreateModule("Auto Buy", {
-	name = "Garden Expander",
-	on = false,
-	bind = "None",
-	desc = "Auto buy plot expansion.",
-	callback = function(enabled)
-		gardenexpanderrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while gardenexpanderrunning do
-					local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-					pcall(function() Networking.Actions.ExpandGarden:Fire() end)
-					task.wait(gardenexpanderdelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Check Delay", value = 5, min = 1, max = 30, suffix = "s", callback = function(value)
-			gardenexpanderdelay = value
-		end},
-	}
-})
+			Page.Visible = true
+			tbdata.first = tdata.Title
 
-autoeggselected = "Common Egg"
-autoeggdelay = 1.0
-autoeggrunning = false
-autoeggactive = false
-autoeggtrashrarity = ""
-autoeggcon = nil
-
-function setupAutoEggTrash(val)
-	if autoeggcon then
-		autoeggcon:Disconnect()
-		autoeggcon = nil
-	end
-	if val then
-		local bp = localPlayer:WaitForChild("Backpack")
-		autoeggcon = bp.ChildAdded:Connect(function(child)
-			task.wait(0.05) -- let attributes replicate
-			if child:IsA("Tool") and child:GetAttribute("Pet") then
-				local petName = child:GetAttribute("Pet")
-				local petId = child:GetAttribute("PetId")
-				if petId then
-					local info = getPetInfo and getPetInfo(petName)
-					local rarity = info and info.Rarity or "Common"
-					local set = {}
-					for s in (autoeggtrashrarity .. ","):gmatch("([^,]+),") do
-						set[s:match("^%s*(.-)%s*$")] = true
-					end
-					if set[rarity] then
-						local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-						pcall(function() Networking.NPCS.SellPet:Fire(petId) end)
+		--[[	if TabData.Locked == true then
+				if lockedframe and lockedframe.Name == TabData.Title then
+					lockedframe.Visible = true
+					for _, v in pairs(WINDOW.Pages.lockedpages:GetChildren()) do
+						if v.Name ~= TabData.Title then
+							v.Visible = false
+						end
 					end
 				end
-			end
-		end)
-	end
-end
-
-function doautoegg()
-	if autoeggactive then return end
-	autoeggactive = true
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	pcall(function()
-		Networking.Egg.OpenEgg:Fire(autoeggselected)
-	end)
-	autoeggactive = false
-end
-
-hub:CreateModule("Main", {
-	name = "Auto Open Eggs",
-	on = false,
-	bind = "None",
-	desc = "Auto buy and open eggs.",
-	callback = function(enabled)
-		autoeggrunning = enabled
-		setupAutoEggTrash(enabled)
-		if enabled then
-			task.spawn(function()
-				while autoeggrunning do
-					doautoegg()
-					task.wait(autoeggdelay)
+				currentLockedTabData = TabData
+			else
+				for _, v in pairs(WINDOW.Pages.lockedpages:GetChildren()) do
+					if v then
+						v.Visible = false
+					end
 				end
+			end]]
+
+			syde:replayLoadTweens()
+
+			for _, otherTab in ipairs(tabs:GetChildren()) do
+				if otherTab:IsA("Frame") then
+					ApplyTabStyle(otherTab, otherTab == Tab)
+					otherTab.interact.Active = true
+				end
+			end
+
+		end)
+
+		syde:AddConnection(syde.Comms.Event, function(p, color)
+			if p == 'Accent' then
+				if tbdata.first ~= tdata.Title then return end
+
+				-- live accent update
+				tweenservice:Create(Tab.indicator, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
+					BackgroundColor3 = color
+				}):Play()
+
+				tweenservice:Create(Tab.indicator.glow, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), {
+					ImageColor3 = color
+				}):Play()
+			end
+		end)
+
+		local function SwitchToTab(tabName)
+			local selectedTab
+			local targetPage
+
+			-- find tab
+			for _, tab in ipairs(tabs:GetChildren()) do
+				if tab:IsA("Frame") and tab.Name == tabName then
+					selectedTab = tab
+					break
+				end
+			end
+
+			-- find page
+			targetPage = pages:FindFirstChild(tabName)
+			if not (selectedTab and targetPage) then
+				warn("[Syde] SwitchToTab failed:", tabName)
+				return
+			end
+
+			-- already selected
+			if tbdata.first == tabName then
+				return
+			end
+
+			-- hide the Home screen if we're jumping straight from it (e.g. via search)
+			if tbdata.homeActive or (HomePage and HomePage.Visible) then
+				HideHomeForTab()
+			end
+
+			-- update title (same logic as click)
+			ChangeName(tabName)
+
+			-- hide all pages
+			for _, page in ipairs(pages:GetChildren()) do
+				if page:IsA("ScrollingFrame") or page.Name == "home" then
+					page.Visible = false
+				end
+			end
+
+			-- show page
+			targetPage.Visible = true
+			tbdata.first = tabName
+
+			-- update tab styles
+			for _, tab in ipairs(tabs:GetChildren()) do
+				if tab:IsA("Frame") then
+					ApplyTabStyle(tab, tab == selectedTab)
+					tab.interact.Active = true
+				end
+			end
+
+			-- replay load tweens like normal click
+			syde:replayLoadTweens()
+
+			return targetPage
+		end
+
+
+
+		local Pages = ui.main.pages
+		local Results = window.search.Container
+		local Template = Results.option
+
+		local activeResults = {}
+		local searchDebounce = 0
+
+		local function getFunctionType(frame)
+			local attr = frame:GetAttribute("FunctionType")
+			if typeof(attr) == "string" then
+				return attr
+			end
+			return "Function"
+		end
+
+		local function clearResults()
+			for _, v in ipairs(Results:GetChildren()) do
+				if v:IsA("Frame") and v ~= Template then
+					v:Destroy()
+				end
+			end
+			table.clear(activeResults)
+		end
+
+		local function createResult(page, func)
+			local key = func:GetFullName() -- unique string key
+			if activeResults[key] then return end
+			activeResults[key] = true
+
+			local result = Template:Clone()
+			result.Visible = true
+			result.Parent = Results
+
+			result.info.title.Text = func.Name
+			result.info.badge["function"].Text = getFunctionType(func)
+			result.info.badge.Size = UDim2.new(0, result.info.badge["function"].TextBounds.X + 20,0, 20)
+			result.interact.MouseButton1Click:Connect(function()
+				-- Ensure we always have the opened page, even if already on it
+
+				closesearch()
+
+				local openedPage = ui.main.pages:FindFirstChild(page.Name)
+				if not openedPage or not openedPage:IsA("ScrollingFrame") then return end
+
+				-- Optional: switch tab visuals (if SwitchToTab does this)
+				SwitchToTab(page.Name)
+
+				task.wait(0.05) -- small delay to allow UI to update
+
+				-- Calculate scroll position
+				local y = func.AbsolutePosition.Y - openedPage.AbsolutePosition.Y + openedPage.CanvasPosition.Y
+
+				-- Scroll to the function
+				tweenservice:Create(
+					openedPage,
+					TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+					{ CanvasPosition = Vector2.new(0, math.max(0, y - 20)) }
+				):Play()
+
+				-- Highlight flash
+				local original = func.BackgroundColor3
+				tweenservice:Create(func, TweenInfo.new(0.2), {
+					BackgroundColor3 = syde:GetLighter(original, 0.03)
+				}):Play()
+
+				task.delay(0.35, function()
+					tweenservice:Create(func, TweenInfo.new(0.35), {
+						BackgroundColor3 = original
+					}):Play()
+				end)
 			end)
+
+			result.MouseEnter:Connect(function()
+				tweenservice:Create(result.ImageLabel, TweenInfo.new(0.2), {
+					ImageColor3 = Color3.fromRGB(255, 255, 255)
+				}):Play()
+
+				--	tweenservice:Create(result.UIStroke, TweenInfo.new(0.2), {Thickness = 1}):Play()
+			end)
+
+			result.MouseLeave:Connect(function()
+				tweenservice:Create(result.ImageLabel, TweenInfo.new(0.2), {
+					ImageColor3 = Color3.fromRGB(130, 130, 130)
+				}):Play()
+				--	tweenservice:Create(result.UIStroke, TweenInfo.new(0.2), {Thickness = 0}):Play()
+			end)
+
+			-- tweenservice:Create(result, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			tweenservice:Create(result.info.badge, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+			tweenservice:Create(result.info.title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+			tweenservice:Create(result.info.badge["function"], TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 		end
-	end,
-	opts = {
-		{type = "dropdown", label = "Egg Type", value = gameLists.eggs[1] or "Common Egg", list = gameLists.eggs, callback = function(value)
-			autoeggselected = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "eggs")
-		end},
-		{type = "slider", label = "Hatch Delay", value = 10, min = 2, max = 50, suffix = "ds", callback = function(value)
-			autoeggdelay = value / 10
-		end},
-		{type = "multiselect", label = "Auto Sell Rarities", value = "", list = gameLists.rarities, callback = function(value)
-			autoeggtrashrarity = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "rarities")
-		end}
-	}
-})
-nightvisionrunning = false
-nightvisionconnection = nil
-origambient = game.Lighting.Ambient
-origbrightness = game.Lighting.Brightness
-origfogend = game.Lighting.FogEnd
-origclocktime = game.Lighting.ClockTime
 
-function togglenightvision(val)
-	nightvisionrunning = val
-	if nightvisionconnection then
-		nightvisionconnection:Disconnect()
-		nightvisionconnection = nil
-	end
-	if val then
-		origambient = game.Lighting.Ambient
-		origbrightness = game.Lighting.Brightness
-		origfogend = game.Lighting.FogEnd
-		origclocktime = game.Lighting.ClockTime
-		nightvisionconnection = game:GetService("RunService").RenderStepped:Connect(function()
-			game.Lighting.Ambient = Color3.fromRGB(200, 200, 200)
-			game.Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
-			game.Lighting.Brightness = 2
-			game.Lighting.FogEnd = 999999
-			game.Lighting.FogStart = 999999
-			game.Lighting.ClockTime = 14
-			local atmosphere = game.Lighting:FindFirstChildOfClass("Atmosphere")
-			if atmosphere then
-				atmosphere.Density = 0
-			end
-		end)
-	else
-		game.Lighting.Ambient = origambient
-		game.Lighting.Brightness = origbrightness
-		game.Lighting.FogEnd = origfogend
-		game.Lighting.ClockTime = origclocktime
-	end
-end
+		local function searchFunctions(query)
+			searchDebounce += 1
+			local thisSearch = searchDebounce
 
-cropsdamageimmunityrunning = false
-poisonivyimmune = true
-ghostpepperimmune = true
-venomspitterimmune = true
-thornroseimmune = true
-plantimmuneconn = nil
+			task.delay(0.05, function()
+				if thisSearch ~= searchDebounce then return end
 
-function applyplantimmunity(inst)
-	if not cropsdamageimmunityrunning then return end
-	if not inst:IsA("BasePart") then return end
-	local plantName = nil
-	local model = inst:FindFirstAncestorWhichIsA("Model")
-	if model then
-		plantName = model:GetAttribute("SeedName") or model.Name
-	end
-	if not plantName then return end
-	
-	local isPoisonIvy = plantName:find("Poison Ivy")
-	local isGhostPepper = plantName:find("Ghost Pepper")
-	local isVenomSpitter = plantName:find("Venom Spitter")
-	local isThornRose = plantName:find("Thorn Rose")
-	
-	if (isPoisonIvy and poisonivyimmune) or
-	   (isGhostPepper and ghostpepperimmune) or
-	   (isVenomSpitter and venomspitterimmune) or
-	   (isThornRose and thornroseimmune) then
-		inst.CanTouch = false
-	end
-end
-
-function toggleplantimmunity(val)
-	cropsdamageimmunityrunning = val
-	if plantimmuneconn then
-		plantimmuneconn:Disconnect()
-		plantimmuneconn = nil
-	end
-	if val then
-		plantimmuneconn = workspace.DescendantAdded:Connect(function(desc)
-			pcall(applyplantimmunity, desc)
-		end)
-		for _, desc in workspace:GetDescendants() do
-			pcall(applyplantimmunity, desc)
-		end
-	end
-end
-
-hub:CreateTab("Visuals", "rbxassetid://10885640682")
-hub:CreateModule("Visuals", {
-	name = "Night Vision",
-	on = false,
-	bind = "None",
-	desc = "Remove darkness.",
-	callback = function(enabled)
-		togglenightvision(enabled)
-	end,
-	opts = {}
-})
-
-hub:CreateModule("Main", {
-	name = "Crops Damage Immunity",
-	on = false,
-	bind = "None",
-	desc = "No crop damage.",
-	callback = function(enabled)
-		toggleplantimmunity(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Immune to Poison Ivy", value = true, callback = function(value)
-			poisonivyimmune = value
-			if cropsdamageimmunityrunning then toggleplantimmunity(true) end
-		end},
-		{type = "checkbox", label = "Immune to Ghost Pepper", value = true, callback = function(value)
-			ghostpepperimmune = value
-			if cropsdamageimmunityrunning then toggleplantimmunity(true) end
-		end},
-		{type = "checkbox", label = "Immune to Venom Spitter", value = true, callback = function(value)
-			venomspitterimmune = value
-			if cropsdamageimmunityrunning then toggleplantimmunity(true) end
-		end},
-		{type = "checkbox", label = "Immune to Thorn Rose", value = true, callback = function(value)
-			thornroseimmune = value
-			if cropsdamageimmunityrunning then toggleplantimmunity(true) end
-		end}
-	}
-})
+				clearResults()
+				query = query:lower()
+				if query == "" then return end
 
 
-petsniperrunning = false
-petsniperdelay = 1
-petsniperlist = ""
-petsniperrarities = ""
-petsnipermutlist = ""
-petsnipermaxdist = 999999
-petsniperreserve = 0
-petsniperactive = false
-local function petsniperallowed(petName)
-	if petsniperlist == "" then return true end
-	local set = {}
-	for s in (petsniperlist .. ","):gmatch("([^,]+),") do
-		set[s:match("^%s*(.-)%s*$")] = true
-	end
-	return set[petName] == true
-end
-local function petsniperrarityallowed(rarity)
-	if petsniperrarities == "" then return true end
-	local set = {}
-	for s in (petsniperrarities .. ","):gmatch("([^,]+),") do
-		set[s:match("^%s*(.-)%s*$")] = true
-	end
-	return set[rarity] == true
-end
-local function petsnipermutallowed(mut)
-	if not mut or mut == "" then mut = "None" end
-	if petsnipermutlist == "" then return true end
-	local set = {}
-	for s in (petsnipermutlist .. ","):gmatch("([^,]+),") do
-		set[s:match("^%s*(.-)%s*$")] = true
-	end
-	return set[mut] == true
-end
-local function dopetsniper()
-	if petsniperactive then return end
-	local map = workspace:FindFirstChild("Map")
-	local wildSpawns = map and map:FindFirstChild("WildPetSpawns")
-	if not wildSpawns then return end
-	local currentSheckles = getPlayerCurrency()
-	local Networking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-	for _, model in wildSpawns:GetChildren() do
-		if not petsniperrunning then break end
-		if model:IsA("Model") then
-			local petName = model:GetAttribute("PetName")
-			if not petName then
-				local mName = model.Name
-				petName = mName:match("^WildPet_(.-)_WildPet") or mName:match("^WildPet_(.-)_") or mName
-			end
-			local cleanName = petName:gsub("^WildPet_[^_]+_", "")
-			local mutation = model:GetAttribute("Mutation") or "None"
-			local info = getPetInfo(cleanName)
-			local rarity = info and info.Rarity or "Common"
-			local costStr = info and info.Cost or "Sheckle 0"
-			local cost = tonumber(costStr:gsub("%D", "")) or 0
-			if petsniperallowed(cleanName) and petsniperrarityallowed(rarity) and petsnipermutallowed(mutation) then
-				local ownerId = model:GetAttribute("OwnerUserId")
-				if not ownerId or ownerId == 0 then
-					local rp = model:FindFirstChild("RootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-					if rp then
-						if cost == 0 or (currentSheckles - petsniperreserve) >= cost then
-							petsniperactive = true
-							task.spawn(function()
-								for i = 1, 4 do
-									if not petsniperrunning then break end
-									pcall(function() Networking.Pets.WildPetTame:Fire(rp) end)
-									task.wait(0.05)
+				for _, page in ipairs(Pages:GetChildren()) do
+					if page:IsA("ScrollingFrame") then
+						for _, child in ipairs(page:GetChildren()) do
+							if child:IsA("Frame") and child:GetAttribute("Searchable") then
+								local name = child.Name:lower()
+								local ftype = getFunctionType(child):lower()
+
+								if name:find(query) or ftype:find(query) then
+									createResult(page, child)
 								end
-								task.wait(0.2)
-								petsniperactive = false
+							end
+						end
+					end
+				end
+			end)
+		end
+
+		local SearchBox = window.search.Frame.TextBox
+		SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			searchFunctions(SearchBox.Text)
+			--	window.search.Size = UDim2.new(0, 350,0, 230)
+			tweenservice:Create(window.search, TweenInfo.new(0.7, Enum.EasingStyle.Quart), {Size =  UDim2.new(0, 350,0, 230)}):Play()
+			tweenservice:Create(window.search.UICorner, TweenInfo.new(0.7, Enum.EasingStyle.Quart), {CornerRadius =  UDim.new(0,25)}):Play()
+			if SearchBox.Text == '' then
+				tweenservice:Create(window.search, TweenInfo.new(0.7, Enum.EasingStyle.Quart), {Size =  UDim2.new(0, 350,0,60)}):Play()
+				tweenservice:Create(window.search.UICorner, TweenInfo.new(0.7, Enum.EasingStyle.Quart), {CornerRadius =  UDim.new(1,0)}):Play()
+			end
+		end)
+
+
+
+
+		syde:AddConnection(syde.Comms.Event, function(p, value)
+			if p == "DropShadow" then
+				local imageLabel = window.shadow.ImageLabel
+				local gradient = imageLabel:FindFirstChildOfClass("UIGradient")
+
+				if not gradient then
+					gradient = Instance.new("UIGradient")
+					gradient.Parent = imageLabel
+				end
+
+				gradient.Color = value
+			end
+		end)
+
+
+		-- ensure new tabs start disabled visually (Home is handled by bootstrap)
+	--[[	if Data.Home.Enabled then
+			ApplyTabStyle(Tab, false)
+		else
+			ApplyTabStyle(Tab, isFirstTab)
+		end
+	end]]
+
+		local initelement = {}
+
+
+		--@@Button
+		function initelement:Button(Button)
+			local data = {
+				Title = Button.Title or "Temp Button";
+				CallBack = Button.CallBack;
+				Desc = Button.Description or "";
+				Type = Button.Type or 'Default';
+				HoldTime = Button.HoldTime or 3;
+			}
+
+			local button = pages.page.Button:Clone()
+			button.Visible = true
+			button.Parent = Page
+			button.title.Text = data.Title
+			button.Name = data.Title
+			button.title.Size = UDim2.new(0, button.title.TextBounds.X + 15,0, 35)
+			button:SetAttribute("Searchable", true)
+
+			local c
+
+			c = data.CallBack
+
+
+			local fOTween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+			local fITween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+
+			if data.Type == 'Default' then
+				-- UI Stroke effect on button press
+
+				button.interact.MouseButton1Down:Connect(function()
+					tweenservice:Create(button.UIStroke, fOTween, { Transparency = 1 }):Play()
+					tweenservice:Create(button.ImageLabel, fOTween, { ImageTransparency = 1 }):Play()
+					tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+				end)
+
+				button.interact.MouseButton1Up:Connect(function()
+					tweenservice:Create(button.UIStroke, fITween, { Transparency = 0 }):Play()
+					tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+
+
+				end)
+
+				button.interact.MouseButton1Click:Connect(function()
+					if data.CallBack then
+						local success, errorMsg = pcall(c)
+						if not success then
+							syde:Report("Button '" .. button.Name .. "' callback", errorMsg)
+
+						end
+					else
+						warn(`[ CallBack Missing: { button.Name } ] No Function Assigned`)
+					end
+				end)
+
+				-- Extra Check 
+				button.interact.MouseLeave:Connect(function()
+					tweenservice:Create(button.UIStroke, fITween, { Transparency = 0 }):Play()
+					tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+				end)
+			elseif data.Type == 'Hold' then
+				local HoldTime = data.HoldTime
+				local Holding = false
+				local TimeLeft = HoldTime
+				local Complete = false
+
+				button.ImageLabel.Image = 'rbxassetid://127075195365098'
+				button.ImageLabel.Rotation = 0
+				button.ImageLabel.Size = UDim2.new(0, 16,0, 16)
+				button.ImageLabel.Position = UDim2.new(1, -41,0.5, 0)
+
+				local function CancelOperation()
+					Holding = false
+					tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 0.95 }):Play()
+					tweenservice:Create(button.title.timer, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+					if not Complete then
+						tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 1 }):Play()
+						tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(1, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+						tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,-15 ,0 ,button.Position.Y.Offset) }):Play()
+						task.wait(0.15)
+						tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,30 ,0 ,button.Position.Y.Offset) }):Play()
+						task.wait(0.15)
+						tweenservice:Create(button, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { Position = UDim2.new(0 ,0 ,0 ,button.Position.Y.Offset) }):Play()
+						task.wait(1)
+						tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0 }):Play()
+					end
+
+					-- did not complete 
+
+					--	button.UIStroke.UIGradient.Offset = Vector2.new(-1, 0)
+					--	tweenservice:Create(button.UIStroke, TweenInfo.new(HoldTime, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+
+					TimeLeft = HoldTime
+					button.title.timer.Text = tostring(HoldTime)
+					task.wait(0.1)
+					Complete = false
+				end
+
+				button.interact.MouseButton1Down:Connect(function()
+
+					Holding = true
+					TimeLeft = HoldTime
+					button.title.timer.Text = tostring(TimeLeft)
+					tweenservice:Create(button.ImageLabel, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+					tweenservice:Create(button.title.timer, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+					tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(HoldTime, Enum.EasingStyle.Linear), { Offset = Vector2.new(0.7, 0) }):Play()
+					tweenservice:Create(button.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0}):Play()
+
+					-- Countdown loop
+					while Holding and TimeLeft > 0 do
+						TimeLeft = math.max(0, TimeLeft - runservice.Heartbeat:Wait())
+						button.title.timer.Text = string.format("%.1f", TimeLeft) 
+
+					end
+
+					if TimeLeft <= 0 then
+						Complete = true
+
+						if data.CallBack then
+							local success, errorMsg = pcall(data.CallBack)
+							if not success then
+								syde:Report("Element callback", errorMsg)
+							end
+						else
+							warn("[CALLBACK MISSING]: No Function Assigned To", data.Title)
+						end
+
+						tweenservice:Create(button, TweenInfo.new(0.34, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.fromRGB(24, 24, 24) }):Play()
+						tweenservice:Create(button.UIStroke.UIGradient, TweenInfo.new(0.1, Enum.EasingStyle.Linear), { Offset = Vector2.new(-1, 0) }):Play()
+						task.wait(0.34)
+						tweenservice:Create(button, TweenInfo.new(0.34, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.fromRGB(17, 17, 17) }):Play()
+					end
+				end)
+
+				button.interact.MouseButton1Up:Connect(function()
+					CancelOperation()
+				end)
+
+				button.interact.MouseLeave:Connect(function()
+					if Holding then
+						CancelOperation()
+					end
+				end)
+			end
+
+			--[DESC]
+			local descLabel = button:FindFirstChild("desc")
+
+			if descLabel then
+				if data.Desc and data.Desc ~= "" then
+					descLabel.Text = data.Desc
+					descLabel.Visible = true
+					descLabel.TextWrapped = true
+					bindDescLabelResize(descLabel, button, 10)
+				else
+					descLabel.Visible = false
+				end
+			end
+
+		end
+
+		--@@Toggle
+		function initelement:Toggle(Toggle)
+			local data = {
+				Title = Toggle.Title or "Temp Toggle";
+				Desc = Toggle.Description or "";
+				V = Toggle.Value or false;
+				Config = Toggle.Config or false;
+				CallBack = Toggle.CallBack;
+				Flag = Toggle.Flag;
+			}
+
+			local toggle = pages.page.Toggle:Clone()
+			toggle.Visible = true
+			toggle.Parent = Page
+			toggle.title.Text = data.Title
+			toggle.Name = data.Title
+			toggle:SetAttribute("Searchable", true)
+
+
+			local toggleConfiguration = ui.Render.ToggleConfiguration:Clone()
+			toggleConfiguration.Parent = ui.Render
+			toggleConfiguration.Visible = false
+
+			toggleConfiguration.Container.KeyBind.Bind.v.Text = 'None'
+			tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Size = UDim2.new(0, toggleConfiguration.Container.KeyBind.Bind.v.TextBounds.X + 20,0, 25) }):Play()
+
+			toggleConfiguration.BackgroundTransparency = 1
+			toggleConfiguration.Container.KeyBind.Title.TextTransparency = 1
+			toggleConfiguration.Container.KeyBind.Bind.BackgroundTransparency = 1
+			toggleConfiguration.Container.KeyBind.Bind.v.TextTransparency = 1
+			toggleConfiguration.Container.Clear.Title.TextTransparency = 1
+			toggleConfiguration.Container.Clear.clear.ImageLabel.ImageTransparency = 1
+			toggleConfiguration.Size = UDim2.new(0, 75,0, 53)
+
+			if not data.Config then
+				toggle.configure:Destroy()
+			end
+
+			local toggleTween = TweenInfo.new(0.7, Enum.EasingStyle.Exponential)
+			local fadeTween = TweenInfo.new(0.57, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
+
+			local function UpdateToggleUI(state)
+				local targetColor = state and syde.theme.HitBox or Color3.fromRGB(28, 28, 28)
+				local strokeTransparency = state and 1 or 0
+				local checkTransparency = state and 0 or 1
+				local gradientTransparency = state and 0 or 1
+				local glowTransparency = state and 0.7 or 1
+				local textTransparency = state and 0 or 0.5
+
+				tweenservice:Create(toggle.tog, toggleTween, { BackgroundColor3 = targetColor }):Play()
+				--	tweenservice:Create(toggle.tog.UIStroke, toggleTween, { Transparency = strokeTransparency }):Play()
+				tweenservice:Create(toggle.tog.check, toggleTween, { ImageTransparency = checkTransparency }):Play()
+				tweenservice:Create(toggle.tog.gradfr, fadeTween, { BackgroundTransparency = gradientTransparency }):Play()
+				tweenservice:Create(toggle.tog.glow, toggleTween, { ImageTransparency = glowTransparency }):Play()
+				tweenservice:Create(toggle.tog.glow, toggleTween, { ImageColor3 = targetColor }):Play()
+				tweenservice:Create(toggle.title, toggleTween, { TextTransparency = textTransparency }):Play()
+			end
+
+			UpdateToggleUI(data.V)
+
+			toggle.interact.MouseButton1Click:Connect(function()
+				data.V = not data.V
+				UpdateToggleUI(data.V)
+
+				local success, errorMsg = pcall(function()
+					if data.CallBack then
+						data.CallBack(data.V)
+					end
+				end)
+
+				if not success then
+					syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
+				end
+			end)
+
+			--[DESC]
+			local descLabel = toggle:FindFirstChild("desc")
+
+			if descLabel then
+				if data.Desc and data.Desc ~= "" then
+					descLabel.Text = data.Desc
+					descLabel.Visible = true
+					descLabel.TextWrapped = true
+					bindDescLabelResize(descLabel, toggle, 10)
+				else
+					descLabel.Visible = false
+				end
+			end
+
+
+			-- [CONFIGURATIPON]
+			if data.Config then
+
+				local State = false
+
+				local enterTween = TweenInfo.new(0.5, Enum.EasingStyle.Exponential)
+
+				toggle.configure.MouseEnter:Connect(function()
+					tweenservice:Create(toggle.configure, enterTween, { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+				end)
+
+				toggle.configure.MouseLeave:Connect(function()
+					tweenservice:Create(toggle.configure, enterTween, { ImageColor3 = Color3.fromRGB(104, 104, 104) }):Play()
+				end)
+
+				local function ToggleConfigOpen()
+					toggleConfiguration.Visible = true
+					State = true
+
+					tweenservice:Create(toggleConfiguration, enterTween, { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Title, enterTween, { TextTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, enterTween, { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.UIStroke, enterTween, { Transparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, enterTween, { TextTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, enterTween, { ImageTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.Clear.Title, enterTween, { TextTransparency = 0 }):Play()
+					tweenservice:Create(toggleConfiguration, TweenInfo.new(0.7, Enum.EasingStyle.Quint), { Size = UDim2.new(0, 174,0, 88) }):Play()
+					--	tweenservice:Create(toggleConfiguration.shadow.ImageLabel, enterTween, { ImageTransparency = 0.57 }):Play()
+
+				end
+
+				local function ToggleConfigClose()
+					State = false
+
+					tweenservice:Create(toggleConfiguration, enterTween, { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Title, enterTween, { TextTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, enterTween, { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.UIStroke, enterTween, { Transparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, enterTween, { TextTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, enterTween, { ImageTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration.Container.Clear.Title, enterTween, { TextTransparency = 1 }):Play()
+					tweenservice:Create(toggleConfiguration, TweenInfo.new(0.7, Enum.EasingStyle.Quint), { Size = UDim2.new(0, 75,0, 53) }):Play()
+					--	tweenservice:Create(toggleConfiguration.shadow.ImageLabel, enterTween, { ImageTransparency = 1 }):Play()
+					task.wait(0.5)
+
+					toggleConfiguration.Visible = false
+
+				end
+
+				local TogService
+				local heldKeys = {} 
+				local debounce1 = false
+
+				local function ToggleConfig()
+					if debounce1 then return end
+					debounce1 = true
+
+					if not toggleConfiguration.Visible then
+						TogService = runservice.RenderStepped:Connect(function()
+							toggleConfiguration:TweenPosition(UDim2.new(0,toggle.configure.AbsolutePosition.X - 190,0,toggle.configure.AbsolutePosition.Y + toggle.configure.AbsoluteSize.Y + 65), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+							if not toggleConfiguration.Visible then
+								TogService:Disconnect()
+							end
+						end)
+						ToggleConfigOpen()
+					else
+						if TogService then TogService:Disconnect() end
+						ToggleConfigClose()
+					end
+
+					task.delay(0.4, function()
+						debounce1 = false
+					end)
+				end
+
+				toggle.configure.MouseButton1Click:Connect(function()
+					ToggleConfig()
+				end)
+
+				local function ResizeBindFrame()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind, TweenInfo.new(0.5, Enum.EasingStyle.Quint), { Size = UDim2.new(0, toggleConfiguration.Container.KeyBind.Bind.v.TextBounds.X + 20,0, 25) }):Play()
+				end
+
+				local function setKeybind(key)
+					if not key then
+						toggleConfiguration.Container.KeyBind.Bind.v.Text = 'None'
+						ResizeBindFrame()
+						data.Keybind = nil
+					else
+						data.Keybind = key
+						data.KeybindReady = false
+
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+						toggleConfiguration.Container.KeyBind.Bind.v.Text = key.Name
+						tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+						ResizeBindFrame()
+
+						task.delay(0.5, function()
+							data.KeybindReady = true
+						end)
+					end
+				end
+
+				toggleConfiguration.Container.KeyBind.Interact.MouseButton1Click:Connect(function()
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+					task.wait(0.2)
+					toggleConfiguration.Container.KeyBind.Bind.v.Text = "..."
+					tweenservice:Create(toggleConfiguration.Container.KeyBind.Bind.v, TweenInfo.new(0.25, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+					ResizeBindFrame()
+
+
+					local connection
+					connection = userinput.InputBegan:Connect(function(input, processed)
+						if not userinput:GetFocusedTextBox() and syde:IsBindableInput(input) then
+							setKeybind(input.KeyCode)
+							connection:Disconnect()
+						end
+					end)
+				end)
+
+				userinput.InputBegan:Connect(function(input, processed)
+					if not userinput:GetFocusedTextBox() and data.Keybind and data.KeybindReady and input.KeyCode == data.Keybind then
+						data.V = not data.V
+						UpdateToggleUI(data.V)
+
+						if data.CallBack then
+							local success, errorMsg = pcall(function()
+								data.CallBack(data.V)
 							end)
+							if not success then
+								syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
+							end
+						end
+
+
+					end
+				end)
+
+				local debounce2 = false
+
+				toggleConfiguration.Container.Clear.Interact.MouseButton1Click:Connect(function()
+					if debounce2 then return end
+					debounce2 = true
+
+					setKeybind(nil)
+
+					local function blink()
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = 13 }):Play()
+						task.wait(0.2)
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = -13 }):Play()
+						task.wait(0.2)
+						tweenservice:Create(toggleConfiguration.Container.Clear.clear.ImageLabel, TweenInfo.new(0.25, Enum.EasingStyle.Quint), { Rotation = 0 }):Play()
+					end
+
+					blink()
+
+					task.delay(2, function()
+						debounce2 = false
+					end)
+				end)
+
+				toggleConfiguration.Container.Clear.MouseEnter:Connect(function()
+					tweenservice:Create(toggleConfiguration.Container.Clear.clear, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.9 }):Play()
+				end)
+
+				toggleConfiguration.Container.Clear.MouseLeave:Connect(function()
+					tweenservice:Create(toggleConfiguration.Container.Clear.clear, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+				end)
+
+			end
+
+			syde:AddConnection(syde.Comms.Event, function(p, color)
+				if p == 'HitBox' then
+					if data.V then
+						toggle.tog.BackgroundColor3 = color
+						toggle.tog.glow.ImageColor3 = color
+					end
+				end
+			end)
+
+			function data:Set(NewValue, skipSave)
+				data.V = NewValue
+				UpdateToggleUI(NewValue)
+
+				if data.CallBack then
+					local success, errorMsg = pcall(function()
+						data.CallBack(data.V)
+					end)
+					if not success then
+						syde:Report("Toggle '" .. toggle.Name .. "' callback", errorMsg)
+					end
+				end
+			end
+
+			if syde.ConfigEnabled and data.Flag then
+				syde.Flags[data.Flag] = data
+				if syde.LoadedConfig and syde.LoadedConfig[data.Flag] ~= nil then
+					data:Set(syde.LoadedConfig[data.Flag], true)
+				end
+			end
+
+			return data
+		end
+
+
+		--@@Slider
+		function initelement:Slider(Slider)
+			local data = {
+				Title = Slider.Title;
+				Desc = Slider.Description;
+				Sliders = Slider.Sliders
+			}
+
+			local slider = pages.page.Slider:Clone()
+			slider.Visible = true
+			slider.Parent = Page
+			slider.title.Text = data.Title
+			slider.Name = data.Title
+			slider.slideholder.slider.Visible = false
+			slider:SetAttribute("Searchable", true)
+
+
+			--[SLIDERS INITIALIZE]
+			for _, Options in ipairs(data.Sliders) do
+				local Slider = pages.page.Slider.slideholder.slider:Clone()
+
+				Options = {
+					Title = Options.Title or "Slider";
+					Increment = Options.Increment or 1;
+					Range = Options.Range or {0, 100};
+					StarterValue = Options.StarterValue or 16;
+					CallBack = Options.CallBack;
+					Flag = Options.Flag;
+				}
+
+				Slider.Name = Options.Title
+				Slider.Title.Text = Options.Title
+				Options.Value = Options.StarterValue
+
+				local dragging = false
+				Slider.Visible = true
+				Slider.Parent = slider.slideholder
+
+				local SliderPosition
+				if Options.StarterValue <= Options.Range[1] then
+					SliderPosition = 0
+				elseif Options.StarterValue >= Options.Range[2] then
+					SliderPosition = 1
+				else
+					local range = Options.Range[2] - Options.Range[1]
+					SliderPosition = (Options.StarterValue - Options.Range[1]) / range
+				end
+
+
+				Slider.slide.slideframe:TweenSize(UDim2.new(SliderPosition, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.5, true)
+
+				syde:registerLoadTween(
+					Slider.slide.slideframe,
+					{Size = UDim2.new(SliderPosition, 0, 1, 0)},
+					{Size = UDim2.new(0, 100,1, 0)},
+					TweenInfo.new(0.85, Enum.EasingStyle.Quint)
+				)
+
+				syde:replayLoadTweens(Slider.slide.slideframe)
+
+				local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+				Slider.v.Text = string.format("<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>", Options.StarterValue, Options.Range[2])
+
+				local function BuildTicks(slide, options)
+					local ticksFrame = slide:FindFirstChild("Ticks")
+					if not ticksFrame then
+						warn("❌ Missing Slider.slide.Ticks")
+						return
+					end
+
+					local template = ticksFrame:FindFirstChild("tick")
+					if not template then
+						warn("❌ Missing Tick template inside Ticks")
+						return
+					end
+
+					local min, max = options.Range[1], options.Range[2]
+					local increment = options.Increment
+					local range = max - min
+
+					if range <= 0 or increment <= 0 then
+						warn("❌ Invalid range/increment", range, increment)
+						return
+					end
+
+					local tickCount = math.floor(range / increment) + 1
+					if tickCount < 2 then return end
+
+					-- wait for UI to size properly
+					task.wait()
+
+					local width = guiAbsSize(ticksFrame).X
+					local height = guiAbsSize(ticksFrame).Y
+
+
+					local spacing = width / (tickCount - 1)
+
+					-- Reuse existing ticks instead of destroying all
+					local existingTicks = {}
+					for _, child in ipairs(ticksFrame:GetChildren()) do
+						if child:IsA("Frame") and child ~= template then
+							table.insert(existingTicks, child)
+						end
+					end
+
+					-- Create new ticks if needed
+					for i = 0, tickCount - 1 do
+						local tick = existingTicks[i + 1] or template:Clone()
+						tick.Visible = true
+						tick.AnchorPoint = Vector2.new(0.5, 0.5)
+						tick.BorderSizePixel = 0
+						--	tick.BackgroundTransparency = 1
+						tick.Parent = ticksFrame
+
+						local finalPos = UDim2.fromOffset(i * spacing, height / 1.5)
+						tweenservice:Create(
+							tick,
+							TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+							{
+								Position = finalPos,
+								BackgroundTransparency = 0.85
+							}
+						):Play()
+					end
+
+					-- Destroy extra ticks
+					for i = tickCount + 1, #existingTicks do
+						existingTicks[i]:Destroy()
+					end
+
+				end
+
+				-- Connect AbsoluteSize change **only once**
+				if Options.Increment > 4 then
+					if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
+						pcall(function()
+							local conn = Slider.slide.Ticks:GetPropertyChangedSignal("Size"):Connect(function()
+								pcall(function()
+									BuildTicks(Slider.slide, Options)
+								end)
+							end)
+							local marker = Instance.new("BoolValue")
+							marker.Name = "_ResizeConnection"
+							marker.Parent = Slider.slide.Ticks
+							marker:GetPropertyChangedSignal("Parent"):Connect(function()
+								if not marker.Parent then
+									conn:Disconnect()
+								end
+							end)
+						end)
+					end
+				end
+
+
+
+
+				local function UpdateSlider(x)
+					if dragging then
+						local sliderStart = Slider.slide.AbsolutePosition.X
+						local sliderWidth = Slider.slide.AbsoluteSize.X
+						local sliderPosition = (x - sliderStart) / sliderWidth
+						sliderPosition = math.clamp(sliderPosition, 0, 1)
+
+						local range = Options.Range[2] - Options.Range[1]
+						local newValue = Options.Range[1] + sliderPosition * range
+						newValue = math.floor((newValue - Options.Range[1]) / Options.Increment + 0.5) * Options.Increment + Options.Range[1]
+						newValue = syde:RoundTo(newValue, syde:DecimalPlaces(Options.Increment))
+
+						-- Update the slider visual position
+						local snapPosition = (newValue - Options.Range[1]) / range
+						Slider.slide.slideframe:TweenSize(UDim2.new(snapPosition, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.55, true)
+
+						syde:registerLoadTween(
+							Slider.slide.slideframe,
+							{Size = UDim2.new(snapPosition, 0, 1, 0)},
+							{Size = UDim2.new(0, 100,1, 0)},
+							TweenInfo.new(0.85, Enum.EasingStyle.Quint)
+						)
+
+
+						-- Update the displayed value
+						local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+						Slider.v.Text = string.format("<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>", newValue, Options.Range[2])
+
+						tweenservice:Create(Slider.Title, TweenInfo.new(0.55, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+						local success, errorMsg = pcall(function()
+							Options.CallBack(newValue)
+						end)
+						if not success then
+							syde:Report("Slider '" .. Slider.Name .. "' callback", errorMsg)
+						end
+
+
+						Options:Set(newValue)
+
+					end
+				end
+				UpdateSlider()
+
+				Slider.slide.Interact.MouseButton1Down:Connect(function()
+					dragging = true
+				end)
+
+				Slider.slide.Interact.MouseButton1Up:Connect(function()
+					dragging = false
+				end)
+
+				syde:AddConnection(userinput.InputEnded, function(input, processed)
+					if input.UserInputType == Enum.UserInputType.MouseButton1  or input.UserInputType == Enum.UserInputType.Touch then
+						dragging = false
+						tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+					end
+				end)
+
+				syde:AddConnection(userinput.InputChanged, function(input)
+					if dragging and input.UserInputType == Enum.UserInputType.MouseMovement  or input.UserInputType == Enum.UserInputType.Touch  then
+						UpdateSlider(input.Position.X)
+					end
+				end)
+
+				Slider.slide.slideframe.BackgroundColor3 = syde.theme.HitBox
+				Slider.slide.slideframe.shadowHolder.ambientShadow.ImageColor3 = syde.theme.HitBox
+				Slider.slide.slideframe.shadowHolder.penumbraShadow.ImageColor3 = syde.theme.HitBox
+				Slider.slide.slideframe.shadowHolder.umbraShadow.ImageColor3 = syde.theme.HitBox
+				slider.slideholder.Size = UDim2.new(1,-30,0,slider.slideholder.UIListLayout.AbsoluteContentSize.Y)
+				local ss = slider.slideholder.UIListLayout.AbsoluteContentSize.Y
+				slider.Size = UDim2.new(1,-35,0, ss  + 20)
+
+				syde:AddConnection(syde.Comms.Event, function(p, color)
+					if p == 'HitBox' then
+						Slider.slide.slideframe.BackgroundColor3 = color
+						Slider.slide.slideframe.shadowHolder.ambientShadow.ImageColor3 = color
+						Slider.slide.slideframe.shadowHolder.penumbraShadow.ImageColor3 = color
+						Slider.slide.slideframe.shadowHolder.umbraShadow.ImageColor3 = color
+					end
+				end)
+
+				function Options:Set(NewVal, skipSave)
+					local range = Options.Range[2] - Options.Range[1]
+					local sliderPosition = (NewVal - Options.Range[1]) / range
+
+					Slider.slide.slideframe:TweenSize(
+						UDim2.new(sliderPosition, 0, 1, 0),
+						Enum.EasingDirection.Out,
+						Enum.EasingStyle.Quint,
+						0.55,
+						true
+					)
+
+					-- Register load tween
+					syde:registerLoadTween(
+						Slider.slide.slideframe,
+						{Size = UDim2.new(sliderPosition, 0, 1, 0)},
+						{Size = UDim2.new(0, 100, 1, 0)},
+						TweenInfo.new(0.85, Enum.EasingStyle.Quint)
+					) 
+
+					-- Update value display
+					local decimalPlaces = syde:DecimalPlaces(Options.Increment)
+					Slider.v.Text = string.format("<font size='14'>%." .. decimalPlaces .. "f</font><font color='#434343'>/%." .. decimalPlaces .. "f</font>", NewVal, Options.Range[2])
+
+					-- Tween title appearance
+					tweenservice:Create(Slider.Title, TweenInfo.new(0.55, Enum.EasingStyle.Exponential), {
+						TextTransparency = 0
+					}):Play()
+
+					-- Callback
+					local success, result = pcall(function()
+						Options.CallBack(NewVal)
+					end)
+					if not success then
+						syde:Report("Slider '" .. slider.Name .. "' callback", result)
+					end
+
+					Options.StarterValue = NewVal
+				end
+
+				-- click the value to type a custom number (reverts if outside range)
+				syde:AttachSliderInput(Slider, Options)
+
+				if syde.ConfigEnabled and Options.Flag then
+					syde.Flags[Options.Flag] = Options
+					if syde.LoadedConfig and syde.LoadedConfig[Options.Flag] ~= nil then
+						Options:Set(syde.LoadedConfig[Options.Flag], true)
+					end
+				end
+
+			end
+
+			--[DESC]
+			local descLabel = slider.slideholder:FindFirstChild("Desc")
+
+			if descLabel then
+				if data.Desc and data.Desc ~= "" then
+					descLabel.Text = data.Desc
+					descLabel.Visible = true
+					descLabel.TextWrapped = true
+					bindSliderDescResize(descLabel, slider)
+				else
+					descLabel.Visible = false
+				end
+			end
+
+		end
+
+		--@@KeyBind
+		function initelement:Keybind(Keybind)
+			local data = {
+				Title = Keybind.Title;
+				Key = Keybind.Key;
+				Desc = Keybind.Description or "";
+				CallBack = Keybind.CallBack;
+				WaitingForKey = false;
+				Hold = false;
+				Holding = false
+			}
+
+			local KeyBind = pages.page.KeyBind:Clone()
+			KeyBind.Visible = true
+			KeyBind.Parent = Page
+			KeyBind.title.Text = data.Title
+			KeyBind.Name = data.Title
+			KeyBind:SetAttribute("Searchable", true)
+
+			KeyBind.Bind.v.Text = data.Key and data.Key.Name or "NONE"
+			local function resizeKeybindButton()
+				pcall(function()
+					local width = KeyBind.Bind.v.TextBounds.X + 30
+					tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint), {Size = UDim2.new(0, width, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
+				end)
+			end
+
+			resizeKeybindButton()
+
+			pcall(function()
+				KeyBind.Bind.v:GetPropertyChangedSignal("Text"):Connect(function()
+					task.defer(resizeKeybindButton)
+				end)
+			end)
+
+			KeyBind.interact.MouseButton1Click:Connect(function()
+				KeyBind.Bind.v.Text = '...'
+				tweenservice:Create(KeyBind.Bind.UIStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Thickness = 1}):Play()
+				data.WaitingForKey = true
+			end)
+
+			local function SetKeybind(keyCode)
+				if keyCode and keyCode ~= Enum.KeyCode.Unknown then
+					data.Key = keyCode
+					tweenservice:Create(KeyBind.Bind.UIStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Thickness = 0}):Play()
+					KeyBind.Bind.v.Text = keyCode.Name
+				else
+					data.Key = nil
+					KeyBind.Bind.v.Text = "NONE"
+				end
+			end
+
+			-- Main input handler
+			syde:AddConnection(userinput.InputBegan, function(input, processed)
+				if data.WaitingForKey then
+					if syde:IsBindableInput(input) then
+						data.WaitingForKey = false
+						SetKeybind(input.KeyCode)
+					end
+					return
+				end
+
+				-- don't fire the bind while typing in a textbox (ignore processed so
+				-- keys the game also uses, e.g. RightShift shift-lock, still work)
+				if userinput:GetFocusedTextBox() then return end
+				if input.KeyCode == Enum.KeyCode.Unknown then return end
+
+				if input.KeyCode == data.Key then
+					data.Hold = true
+
+					local holdConnection
+					holdConnection = input.Changed:Connect(function(prop)
+						if prop == "UserInputState" then
+							local state = input.UserInputState
+							data.Hold = (state == Enum.UserInputState.Begin)
+							if state == Enum.UserInputState.End and holdConnection then
+								holdConnection:Disconnect()
+							end
+						end
+					end)
+
+					local success, result = pcall(data.CallBack)
+					if not data.Holding then
+						if not success then
+							syde:Report("Keybind '" .. KeyBind.Name .. "' callback", result)
+						end
+					else
+						if data.Hold then
+							local holdLoop
+							holdLoop = runservice.RenderStepped:Connect(function()
+								if not data.Hold then
+									data.CallBack(false)
+									holdLoop:Disconnect()
+								else
+									data.CallBack(false)
+								end
+							end)
+						end
+					end
+				end
+			end)
+
+		end
+
+		--@@TextInput
+		function initelement:TextInput(TextInput)
+			local data = {
+				Title = TextInput.Title or "Text Input",
+				Description = TextInput.Description or "",
+				PlaceHolder = TextInput.PlaceHolder or "Enter text...",
+				StarterValue = TextInput.StarterValue,
+				NumbersOnly = TextInput.NumberOnly or false,
+				ClearOnLost = TextInput.ClearOnLost == true,
+				--	MaxSize = TextInput.MaxSize or 100,
+				CallBack = TextInput.CallBack,
+			}
+
+			local textinput = pages.page.Input:Clone()
+			textinput.Visible = true
+			textinput.Parent = Page
+			textinput.Name = data.Title
+			textinput.title.Text = data.Title
+			textinput.TextFrame.TextBox.PlaceholderText = data.PlaceHolder
+			textinput:SetAttribute("Searchable", true)
+
+			local textBox = textinput.TextFrame.TextBox
+			local defaultHeight = 32
+			--	local maxHeight = data.MaxSize
+			local ignoreNextClear = false
+
+			if typeof(data.StarterValue) == "string" and data.StarterValue ~= "" then
+				textBox.Text = data.StarterValue
+				textBox.ClearTextOnFocus = false
+			end
+
+			local descLabel = textinput:FindFirstChild("desc")
+			if descLabel then
+				if data.Description ~= "" then
+					descLabel.Text = data.Description
+					descLabel.Visible = true
+					descLabel.TextWrapped = true
+
+					local function updateDescSize()
+						pcall(function()
+							local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+							local newDescSize = UDim2.new(1, -150, 0, textHeight)
+							local textFrame = textinput:FindFirstChild("TextFrame")
+							local textFrameHeight = 0
+							if textFrame and textFrame:IsA("GuiObject") then
+								textFrameHeight = textFrame.Size.Y.Offset
+							end
+							local titleHeight = 0
+							local title = textinput:FindFirstChild("title")
+							if title and title:IsA("GuiObject") then
+								titleHeight = title.Size.Y.Offset
+							end
+							local newInputSize = UDim2.new(textinput.Size.X.Scale, textinput.Size.X.Offset, 0, titleHeight + textHeight + textFrameHeight + 20)
+							tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+							tweenservice:Create(textinput, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newInputSize }):Play()
+						end)
+					end
+
+					pcall(updateDescSize)
+					pcall(function()
+						descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+							task.defer(updateDescSize)
+						end)
+					end)
+				else
+					descLabel.Visible = false
+				end
+			end
+
+
+
+			textinput.TextFrame.Enter.MouseEnter:Connect(function()
+				tweenservice:Create(textinput.TextFrame.Enter, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+			end)
+
+			textinput.TextFrame.Enter.MouseLeave:Connect(function()
+				tweenservice:Create(textinput.TextFrame.Enter, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextColor3 = Color3.fromRGB(40, 40, 40)}):Play()
+			end)
+
+			textBox:GetPropertyChangedSignal("Text"):Connect(function()
+				if data.NumbersOnly then
+					textBox.Text = textBox.Text:gsub("%D", "")
+				end
+
+				textBox.Size = UDim2.new(1, -60, 0, defaultHeight + 40)
+
+				local textHeight = defaultHeight
+				pcall(function()
+					textHeight = measureLabelTextHeight(textBox, defaultHeight)
+				end)
+
+				if textBox.Text == "" then
+					textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+				else
+					local newHeight = math.min(textHeight + 18, 120 + 50)
+					textBox.Size = UDim2.new(1, -60, 0, newHeight)
+
+				end
+
+			end)
+
+			textinput.TextFrame:GetPropertyChangedSignal("Size"):Connect(function()
+				local newHeight = textinput.TextFrame.Size.Y.Offset
+				local extraHeight = 32
+
+
+
+
+				tweenservice:Create(
+					textinput,
+					TweenInfo.new(0.7, Enum.EasingStyle.Quint),
+					{ Size = UDim2.new(1, -35, 0, newHeight + extraHeight + 35) }
+				):Play()
+
+				--	tweenservice:Create(textinput.ImageLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quart), { Position = UDim2.new(1, -20,1, -15) }):Play()
+
+
+			end)
+
+			textBox:GetPropertyChangedSignal("Size"):Connect(function()
+				local newHeight = textBox.Size.Y.Offset
+				local totalHeight = math.max(newHeight, defaultHeight)
+
+				tweenservice:Create(
+					textinput.TextFrame,
+					TweenInfo.new(0.7, Enum.EasingStyle.Quint),
+					{ Size = UDim2.new(1, -60, 0, totalHeight + 0) }
+				):Play()
+
+
+			end)
+
+			local function ProcessInput(text)
+				local success, errorMsg = pcall(function()
+					data.CallBack(text)
+				end)
+				if not success then
+					syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+				end
+			end
+
+			textBox.FocusLost:Connect(function(enterPressed)
+				if not enterPressed then return end
+
+				local success, errorMsg = pcall(function()
+					data.CallBack(textBox.Text)
+				end)
+				if not success then
+					syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+				end
+
+				if data.ClearOnLost then
+					task.defer(function()
+						textBox.Text = ""
+						textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+					end)
+				else
+					textBox.ClearTextOnFocus = false
+				end
+			end)
+
+			textinput.TextFrame.Enter.MouseButton1Click:Connect(function()
+				local success, errorMsg = pcall(function()
+					data.CallBack(textBox.Text)
+				end)
+				if not success then
+					syde:Report("TextInput '" .. textinput.Name .. "' callback", errorMsg)
+				end
+
+				if data.ClearOnLost then
+					task.defer(function()
+						textBox.Text = ""
+						textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
+					end)
+				else
+					textBox.ClearTextOnFocus = false
+				end
+			end)
+
+
+		end
+
+		function initelement:EnchancedView(View)
+			local Viewdata = {
+				Title = View.Title or "3D View",
+				Object = View.Object,
+				UserRotate = View.UserRotate or false,
+				AutoRotate = View.AutoRotate ~= false -- default true
+			}
+
+			local EnchancedView = pages.page["3DView"]:Clone()
+			EnchancedView.Visible = true
+			EnchancedView.Parent = Page
+			EnchancedView.Title.Text = Viewdata.Title
+			EnchancedView:SetAttribute("Searchable", true)
+
+			local Viewport = EnchancedView.ViewFrame.ViewportFrame
+			local Camera = Instance.new("Camera")
+			Camera.Parent = Viewport
+			Viewport.CurrentCamera = Camera
+
+			-- Clone the object
+			local ObjectClone = Viewdata.Object:Clone()
+			ObjectClone.Parent = Viewport
+
+			-- Center object
+			-- Center object properly so pivot is in the middle from the start
+			if ObjectClone:IsA("Model") then
+				ObjectClone:PivotTo(CFrame.new(0, 0, 0))
+			else
+				ObjectClone.CFrame = CFrame.new(0, 0, 0)
+			end
+
+			-- Anchor parts
+			if ObjectClone:IsA("BasePart") then
+				ObjectClone.Anchored = true
+			elseif ObjectClone:IsA("Model") then
+				for _, part in ipairs(ObjectClone:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.Anchored = true
+					end
+				end
+			end
+
+			if Viewdata.UserRotate == false then
+				tweenservice:Create(EnchancedView.ViewFrame.ImageLabel, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {
+					ImageTransparency = 1
+				}):Play()
+			end
+
+			-- Determine center & size
+			local primaryPart
+			local size
+			local center
+
+			if ObjectClone:IsA("BasePart") then
+				size = ObjectClone.Size
+				ObjectClone.CFrame = CFrame.new(0, 0, 0)
+
+			elseif ObjectClone:IsA("Model") then
+				-- Get bounding box center and size
+				local cf, boundsSize = ObjectClone:GetBoundingBox()
+				size = boundsSize
+
+				-- Move model so its center is at (0,0,0)
+				ObjectClone:PivotTo(CFrame.new(0, 0, 0))
+
+				-- Ensure Roblox finishes recalculating bounds after clone
+				task.defer(function()
+					ObjectClone:PivotTo(CFrame.new(0, 0, 0))
+				end)
+			end
+
+
+			-- Camera distance based on size
+			local maxDimension = math.max(size.X, size.Y, size.Z)
+			local distance = maxDimension * 2
+			Camera.CFrame = CFrame.new(Vector3.new(0, 0, distance), Vector3.new(0, 0, 0))
+
+			-- Icon Rotation state
+			local icon = EnchancedView.ViewFrame.ImageLabel
+
+
+			-- Rotation state
+			local targetRotationX, targetRotationY = 0, 0
+			local currentRotationX, currentRotationY = 0, 0
+
+			local dragging = false
+			local dragStartPos
+			local lastPos
+
+			task.spawn(function()
+				while EnchancedView.Parent do
+					currentRotationX += (targetRotationX - currentRotationX) * 0.15
+					currentRotationY += (targetRotationY - currentRotationY) * 0.15
+
+					local rotationCFrame = CFrame.Angles(currentRotationX, currentRotationY, 0)
+					if ObjectClone:IsA("Model") then
+						ObjectClone:PivotTo(rotationCFrame)
+					else
+						ObjectClone.CFrame = rotationCFrame
+					end
+					task.wait(0.016)
+				end
+			end)
+
+			-- Auto rotate (horizontal only so it looks natural)
+			if Viewdata.AutoRotate then
+				task.spawn(function()
+					while EnchancedView.Parent do
+						if not Viewdata.UserRotate or not dragging then
+							targetRotationY = targetRotationY + math.rad(0.5)
+
+						end
+						task.wait(0.01)
+					end
+				end)
+			end
+
+
+			if Viewdata.UserRotate == true then
+				Viewport.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						dragging = true
+						lastPos = input.Position
+						dragStartPos = input.Position -- store where drag started
+
+						tweenservice:Create(icon, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {
+							ImageColor3 = Color3.fromRGB(255, 255, 255)
+						}):Play()
+					end
+				end)
+
+				Viewport.InputEnded:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						dragging = false
+						tweenservice:Create(icon, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {
+							ImageColor3 = Color3.fromRGB(30, 30, 30)
+						}):Play()
+					end
+				end)
+
+				Viewport.InputChanged:Connect(function(input)
+					if dragging and input.UserInputType == Enum.UserInputType.MouseMovement  then
+						local delta = input.Position - lastPos
+
+						-- Apply rotation
+						targetRotationY = targetRotationY + delta.X * 0.005
+						targetRotationX = math.clamp(targetRotationX - delta.Y * 0.005, -math.pi/2, math.pi/2)
+
+
+						lastPos = input.Position
+					end
+				end)
+			end
+
+
+			-- === Zoom + Elastic Scroll (virtual vs visual) ===
+			local ZoomFrame   = EnchancedView.ViewFrame.Zoom
+			local ClipFrame   = ZoomFrame.clipframe
+			local ScrollFrame = ClipFrame.scroll
+			local ZoomAmountLabel = ZoomFrame.Frame.ZoomAmount -- << change to your label path
+
+			-- Zoom range (studs)
+			local minZoomDistance = maxDimension * 0.5
+			local maxZoomDistance = maxDimension * 10
+
+			-- Elastic settings
+			local elasticity   = 0.4      -- visual resistance (0..1)
+			local maxOverdrag  = 50       -- px visual overdrag cap
+			local tweenInfo    = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+			-- Limits (top is 0, bottom is negative if scroll is taller than clip)
+			local function getScrollLimits()
+				local minY = 0
+				local diff = ScrollFrame.AbsoluteSize.Y - ClipFrame.AbsoluteSize.Y
+				local maxY = diff > 0 and -diff or 0
+				return minY, maxY
+			end
+
+			-- Map Y -> zoom (defensive if no range)
+			local function yToZoom(y)
+				local minY, maxY = getScrollLimits()
+				if minY == maxY then
+					return minZoomDistance
+				end
+				local t = (y - minY) / (maxY - minY) -- 0..1
+				return minZoomDistance + (maxZoomDistance - minZoomDistance) * t
+			end
+
+			local function updateZoom(distance)
+				distance = math.clamp(distance, minZoomDistance, maxZoomDistance)
+				Camera.CFrame = CFrame.new(Vector3.new(0, 0, distance), Vector3.new(0, 0, 0))
+				if ZoomAmountLabel then
+					tweenservice:Create(ZoomAmountLabel, TweenInfo.new(0.8, Enum.EasingStyle.Elastic), {Position = UDim2.new(1, 0,0.5, -20)}):Play()
+					task.wait(0.045)
+					ZoomAmountLabel.Text = 'x'..string.format("%.2f", distance)
+					ZoomAmountLabel.Position = UDim2.new(1, 0,0.5, 20)
+					tweenservice:Create(ZoomAmountLabel, TweenInfo.new(0.8, Enum.EasingStyle.Elastic), {Position = UDim2.new(1, 0,0.5, 0)}):Play()
+				end
+			end
+
+
+
+			local function visualYFromVirtualY(vy)
+				local minY, maxY = getScrollLimits()
+				if vy > minY then
+					local over = vy - minY
+					return math.min(minY + over * elasticity, minY + maxOverdrag)
+				elseif vy < maxY then
+					local over = vy - maxY -- negative
+					return math.max(maxY + over * elasticity, maxY - maxOverdrag)
+				else
+					return vy
+				end
+			end
+
+			-- State
+			local dragging   = false
+			local lastPos
+			local virtualY   = 0 
+
+			-- Initialize virtual to current
+			virtualY = ScrollFrame.Position.Y.Offset
+
+			local initialZoom = 20
+			updateZoom(initialZoom)
+
+			-- Sync scroll position with initial zoom
+			local minY, maxY = getScrollLimits()
+			local t = (initialZoom - minZoomDistance) / (maxZoomDistance - minZoomDistance)
+			local startY = minY + (maxY - minY) * t
+			virtualY = startY
+			ScrollFrame.Position = UDim2.new(ScrollFrame.Position.X.Scale, ScrollFrame.Position.X.Offset, 0, startY)
+
+			if ZoomAmountLabel then
+				ZoomAmountLabel.Text = string.format("%.2f", distance)
+			end
+
+			ZoomFrame.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					dragging = true
+					lastPos = input.Position
+				end
+			end)
+
+			ZoomFrame.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					dragging = false
+
+					-- Clamp virtual to limits and snap visually
+					local minY, maxY = getScrollLimits()
+					virtualY = math.clamp(virtualY, maxY, minY)
+
+					game:GetService("TweenService"):Create(
+						ScrollFrame,
+						tweenInfo,
+						{ Position = UDim2.new(ScrollFrame.Position.X.Scale, ScrollFrame.Position.X.Offset, 0, virtualY) }
+					):Play()
+
+					-- Keep zoom in sync with the snapped position
+					local distance = yToZoom(virtualY)
+					updateZoom(distance)
+				end
+			end)
+
+			ZoomFrame.InputChanged:Connect(function(input)
+				if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+					local deltaY = input.Position.Y - lastPos.Y
+					lastPos = input.Position
+
+					-- 1) Update virtual Y with full delta (no elasticity here)
+					virtualY = virtualY + deltaY
+
+					-- 2) Visual Y with elasticity (so it rubber-bands)
+					local visualY = visualYFromVirtualY(virtualY)
+					ScrollFrame.Position = UDim2.new(ScrollFrame.Position.X.Scale, ScrollFrame.Position.X.Offset, 0, visualY)
+
+					-- 3) Zoom uses CLAMPED virtual Y (so overdrag doesn't affect zoom)
+					local minY, maxY = getScrollLimits()
+					local clampedY = math.clamp(virtualY, maxY, minY)
+					local distance = yToZoom(clampedY)
+					updateZoom(distance)
+				end
+			end)
+
+		end
+
+
+		--@@Labels/Paragraph
+		function initelement:Paragraph(Paragraph)
+			local ParaData = {
+				Title = Paragraph.Title;
+				Content = Paragraph.Content;
+			}
+
+			local Para = pages.page.Paragraph:Clone()
+			Para.Visible = true
+			Para.Parent = Page
+			setParagraphTitle(Para, ParaData.Title)
+			local paraContent = getParagraphContent(Para)
+			if not paraContent then
+				warn("[Syde] Paragraph template is missing a content label")
+				return { Set = function() end, Instance = Para }
+			end
+			local function updateSize(animate)
+				pcall(function()
+					if not paraContent or not paraContent.Parent then
+						return
+					end
+					applyParagraphSize(Para, paraContent, animate == true)
+				end)
+			end
+
+			pcall(function()
+				paraContent.Text = ParaData.Content
+			end)
+			Para:SetAttribute("Searchable", true)
+
+			updateSize(false)
+
+			pcall(function()
+				paraContent:GetPropertyChangedSignal("Text"):Connect(function()
+					task.defer(function()
+						updateSize(false)
+					end)
+				end)
+			end)
+
+			local ParagraphSettings = {}
+
+			function ParagraphSettings:Set(text, title)
+				deferParagraphUpdate(function()
+					setParagraphTitle(Para, title)
+					paraContent = applyParagraphContent(Para, paraContent, text)
+					scheduleParagraphResize(Para, paraContent, true)
+				end)
+			end
+
+			ParagraphSettings.Instance = Para
+			ParagraphSettings.ContentLabel = paraContent
+
+			return ParagraphSettings
+		end
+
+		function initelement:Label(Text, Alignment)
+
+			local Label = pages.page.Label:Clone()
+			Label.Visible = true
+			Label.Parent = Page
+			Label.text.Text = Text
+			Label:SetAttribute("Searchable", true)
+
+			if Alignment == 'Center' then
+				Label.text.TextXAlignment = Enum.TextXAlignment.Center
+			elseif Alignment == 'Right' then
+				Label.text.TextXAlignment = Enum.TextXAlignment.Right
+			end
+
+			local LabelSettings = {}
+
+			function LabelSettings:Set(text)
+				deferParagraphUpdate(function()
+					if Label and Label.Parent and Label:FindFirstChild("text") then
+						Label.text.Text = text or ""
+					end
+				end)
+			end
+
+			LabelSettings.Instance = Label
+
+			return LabelSettings
+		end
+
+		function initelement:Section(Title, Icon)
+			local SectionData = {
+				Title = Title
+			}
+
+			local Section =  pages.page.Section:Clone()
+			Section.Visible = true
+			Section.Title.Text = Title
+			Section.Parent = Page
+			Section.Title.Position = UDim2.new(0, 0,0, 0)
+
+			if Icon then
+				Section.icon.Image = 'rbxassetid://'..Icon
+				Section.Title.Position = UDim2.new(0, 25,0, 0)
+			else
+				Section.icon.Visible = false
+			end
+		end
+
+		--@@Dropdown
+		function initelement:Dropdown(Dropdown)
+			local data = {
+				Title = Dropdown.Title or "Temp Dropdown";
+				Options = Dropdown.Options or {};
+				StarterOption = Dropdown.StarterOption;
+				PlaceHolder = Dropdown.PlaceHolder or "Select Option...";
+				Multi = Dropdown.Multi or false;
+				CallBack = Dropdown.CallBack;
+			}
+
+			local dropdown = pages.page.Dropdown:Clone()
+			dropdown.Visible = true
+			dropdown.Parent = Page
+			dropdown.title.Text = data.Title
+			dropdown.Name = data.Title
+			dropdown.dropholder.drop.Container.Option.Visible = false
+			dropdown.dropholder.drop.Container.Visible = false
+			tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(0.33, -20,0.576, -75) }):Play()
+			dropdown.dropholder.drop.selected.Text = data.PlaceHolder 
+			dropdown:SetAttribute("Searchable", true)
+
+			local DropOpen = false
+			local DeBounce = false
+			local OptionButton = dropdown.dropholder.drop.Container.Option
+			local SelectedOptions = {}
+			local SelectedOrder = {}
+
+			local function UpdateCustomLayout()
+				local yOffset = 0
+				for _, option in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+					if option:IsA("Frame") and option.Visible then
+						tweenservice:Create(option, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
+						yOffset = yOffset + option.Size.Y.Offset + 7
+					end
+				end
+			end
+
+			local function OpenDrop()
+				DropOpen = true
+				dropdown.dropholder.drop.Container.Visible = true
+				dropdown.dropholder.drop.search.Visible = true
+
+				tweenservice:Create(dropdown, TweenInfo.new(1.34, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -35, 0, 300) }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -20, 1, -75) }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.v0, TweenInfo.new(1.34, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.down, TweenInfo.new(0.35, Enum.EasingStyle.Quint), { Rotation = 180 }):Play()
+
+				tweenservice:Create(dropdown.dropholder.drop.search, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.65 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 0.4 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.TextBox, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.9 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.icon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.85 }):Play()
+
+			end
+
+			local function CloseDrop()
+				DropOpen = false
+				tweenservice:Create(dropdown, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(1, -35, 0, 95) }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.Container, TweenInfo.new(1, Enum.EasingStyle.Quint), { Size = UDim2.new(0.33, -20, 0.576, -75) }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.v0, TweenInfo.new(1.34, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.down, TweenInfo.new(0.35, Enum.EasingStyle.Quint), { Rotation = 0 }):Play()
+
+				tweenservice:Create(dropdown.dropholder.drop.search, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), { Transparency = 1 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.TextBox, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 1 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+				tweenservice:Create(dropdown.dropholder.drop.search.icon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 1 }):Play()
+
+				task.wait(0.6)
+				dropdown.dropholder.drop.Container.Visible = false
+				dropdown.dropholder.drop.search.Visible = false
+
+			end
+
+			dropdown.dropholder.drop.down.MouseButton1Click:Connect(function()
+				if DeBounce then return end
+				DeBounce = true
+
+				if DropOpen then
+					CloseDrop()
+				else
+					OpenDrop()
+				end
+
+				task.delay(1.2, function()
+					DeBounce = false
+				end)
+			end)
+
+			local function AddToSelected(option)
+				if not SelectedOptions[option] then
+					SelectedOptions[option] = true
+
+					local originalIndex
+					for i, opt in ipairs(data.Options) do
+						if opt == option then
+							originalIndex = i
+							break
+						end
+					end
+
+					local insertIndex = 1
+					for i, selected in ipairs(SelectedOrder) do
+						local selectedIndex = table.find(data.Options, selected)
+						if selectedIndex and selectedIndex < originalIndex then
+							insertIndex = i + 1
+						else
+							break
+						end
+					end
+					table.insert(SelectedOrder, insertIndex, option)
+				end
+			end
+
+			local function RemoveFromSelected(option)
+				if SelectedOptions[option] then
+					SelectedOptions[option] = nil
+					for i = #SelectedOrder, 1, -1 do
+						if SelectedOrder[i] == option then
+							table.remove(SelectedOrder, i)
+							break
+						end
+					end
+				end
+
+				local selectedContainer = dropdown.dropholder.drop.selectContainer.ScrollingFrame
+				for _, child in ipairs(selectedContainer:GetChildren()) do
+					if child:IsA("Frame") and child.Name == option then
+						child:Destroy()
+						break
+					end
+				end
+			end
+
+			local function UpdateSelectedText()
+				local selectedContainer = dropdown.dropholder.drop.selectContainer.ScrollingFrame
+				local placeholderText = dropdown.dropholder.drop.selected
+				selectedContainer.Visible = data.Multi
+				dropdown.dropholder.drop.selected.Visible = false
+
+
+				if data.Multi then
+
+					if #SelectedOrder == 0 then
+						placeholderText.Visible = true
+						selectedContainer.Visible = false
+						return
+					end
+
+
+					-- Create chips for each selected option
+					for _, option in ipairs(SelectedOrder) do
+						-- Prevent duplicate pills
+						if not selectedContainer:FindFirstChild(option) then
+							local optionGroup = selectedContainer.result:Clone()
+							optionGroup.Visible = true
+							optionGroup.Name = option
+							optionGroup.TextLabel.Text = option
+
+							-- Set up remove button
+							optionGroup.X.MouseButton1Click:Connect(function()
+								RemoveFromSelected(option)
+								UpdateSelectedText()
+
+								-- Visually update the dropdown list
+								for _, opt in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+									if opt:IsA("Frame") and opt.Name == option then
+										tweenservice:Create(opt, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+										tweenservice:Create(opt, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+										tweenservice:Create(opt.Title, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+										tweenservice:Create(opt.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+										tweenservice:Create(opt.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0.9}):Play()
+									end
+								end
+
+								if data.CallBack then
+									data.CallBack(SelectedOrder)
+								end
+							end)
+
+							optionGroup.Parent = selectedContainer
+
+							-- Optional: auto-size width
+							task.defer(function()
+								local padding = 40
+								local textWidth = optionGroup.TextLabel.TextBounds.X
+								local totalWidth = textWidth + padding
+
+								optionGroup.TextLabel.Size = UDim2.new(0, textWidth, 1, 0)
+
+								tweenservice:Create(optionGroup, TweenInfo.new(0.67, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, totalWidth, 0, 20)}):Play()
+							end)
+						end
+					end
+
+				else
+					-- Single option text fallback
+					dropdown.dropholder.drop.selected.Visible = true
+					if #SelectedOrder > 0 then
+						dropdown.dropholder.drop.selected.Text = SelectedOrder[1]
+					else
+						dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+					end
+				end
+			end
+
+			--[SEARCH]
+			dropdown.dropholder.drop.search.TextBox:GetPropertyChangedSignal("Text"):Connect(function()
+				local searchText = dropdown.dropholder.drop.search.TextBox.Text:lower()
+
+				for _, option in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+					if option:IsA("Frame") and option:FindFirstChild("Title") then
+						local optionText = option.Title.Text:lower()
+						local isTemplate = option.Name == "Option"
+						local shouldShow = not isTemplate and (searchText == "" or optionText:find(searchText, 1, true) or SelectedOptions[option.Title.Text])
+
+						if shouldShow then
+							option.Visible = true
+							if SelectedOptions[option.Title.Text] then
+								tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+								tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+								tweenservice:Create(option.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+								tweenservice:Create(option.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
+							else
+								tweenservice:Create(option, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+								tweenservice:Create(option, TweenInfo.new(1, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+								tweenservice:Create(option.Title, TweenInfo.new(1, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+								tweenservice:Create(option.UIStroke, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), {ImageTransparency = 0.9}):Play()
+							end
+						else
+							-- Hide with animation, but wait before setting Visible = false
+							tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
+							tweenservice:Create(option, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+							tweenservice:Create(option.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+							tweenservice:Create(option.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+							tweenservice:Create(option.ImageLabel, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
+							option.Visible = false
+						end
+					end
+				end
+
+				UpdateCustomLayout()
+			end)
+
+
+
+			local function SetDropdownOptions()
+				local starterSet = false
+				for _, OptionText in ipairs(data.Options) do
+					local option = OptionButton:Clone()
+					option.Title.Text = OptionText
+					option.Parent = dropdown.dropholder.drop.Container
+					option.Visible = true
+					option.Name = OptionText
+
+					if OptionText == data.StarterOption and not starterSet then
+						starterSet = true
+						dropdown.dropholder.drop.selected.Text = OptionText
+						SelectedOptions = {[OptionText] = true}
+						SelectedOrder = {OptionText}
+
+						tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+						tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+					end
+
+					option.Interact.MouseButton1Click:Connect(function()
+						if data.Multi then
+							if SelectedOptions[OptionText] then
+								RemoveFromSelected(OptionText)
+								tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0.9}):Play()
+							else
+								AddToSelected(OptionText)
+								tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+								tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+							end
+
+							if data.CallBack then
+								data.CallBack(SelectedOrder)
+							end
+						else
+							dropdown.dropholder.drop.selected.Text = OptionText
+
+							SelectedOptions = {[OptionText] = true}
+							SelectedOrder = {OptionText}
+
+							for _, opt in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+								if opt:IsA("Frame") then
+									tweenservice:Create(opt, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(33, 33, 33)}):Play()
+									tweenservice:Create(opt.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0.9}):Play()
+								end
+							end
+
+							tweenservice:Create(option, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(39, 39, 39)}):Play()
+							tweenservice:Create(option.ImageLabel, TweenInfo.new(0.3), {ImageTransparency = 0}):Play()
+
+
+							if data.CallBack then
+								data.CallBack(OptionText)
+							end
+
+
+							CloseDrop()
+						end
+
+						UpdateSelectedText()
+
+					end)
+				end
+
+				if not starterSet then
+					dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+				end
+
+				UpdateCustomLayout()
+			end
+
+			SetDropdownOptions()
+
+			function data:GetSelected()
+				if data.Multi then
+					return SelectedOrder
+				end
+				return SelectedOrder[1]
+			end
+
+			function data:SetOptions(newOptions, starter)
+				data.Options = newOptions or {}
+				data.StarterOption = starter
+				for _, child in ipairs(dropdown.dropholder.drop.Container:GetChildren()) do
+					if child:IsA("Frame") and child.Name ~= "Option" then
+						child:Destroy()
+					end
+				end
+				local selectedContainer = dropdown.dropholder.drop.selectContainer.ScrollingFrame
+				for _, child in ipairs(selectedContainer:GetChildren()) do
+					if child:IsA("Frame") and child.Name ~= "result" then
+						child:Destroy()
+					end
+				end
+				SelectedOptions = {}
+				SelectedOrder = {}
+				dropdown.dropholder.drop.selected.Text = data.PlaceHolder
+				SetDropdownOptions()
+				UpdateSelectedText()
+			end
+
+			data.Instance = dropdown
+
+			return data
+		end
+
+		--@@Colorpicker
+		function initelement:ColorPicker(ColorPicker)
+			local data = {
+				Title = ColorPicker.Title;
+				Color = ColorPicker.Color;
+				Color2 = ColorPicker.Color2;
+				Linkable = ColorPicker.Linkable;
+				Type = ColorPicker.Type or 'ColorPicker';
+				GradientPath = ColorPicker.GradientPath;
+				CallBack = ColorPicker.CallBack;
+				Flag = ColorPicker.Flag;
+			}
+
+			ColorPicker.Linkable = ColorPicker.Linkable or true
+
+
+			local colorpicker = pages.page.ColorPicker:Clone()
+			colorpicker.Visible = true
+			colorpicker.Parent = Page
+			colorpicker.title.Text = data.Title
+			colorpicker.Name = data.Title
+			colorpicker:SetAttribute("Searchable", true)
+
+
+
+			local isLinkable = Instance.new("BoolValue")
+			isLinkable.Name = 'isLinkable'
+			isLinkable.Value = data.Linkable
+			isLinkable.Parent = colorpicker
+
+			local HueSat = Instance.new("Color3Value")
+			HueSat.Name = 'HueSat'
+			HueSat.Value = data.Color
+			HueSat.Parent = colorpicker
+
+
+			local Open = false
+			local DeBounce = false
+			local State = false
+
+			do
+				local HueValues = colorpicker.HueValues
+
+				-- kill UIListLayout if it exists
+				local list = HueValues:FindFirstChildOfClass("UIListLayout")
+				if list then list:Destroy() end
+
+				local ITEMS = {
+					HueValues.HEX,
+					HueValues.RGB,
+					HueValues.Link
+				}
+
+				local GAP = 8
+				local ITEM_HEIGHT = 30
+				local ITEM_WIDTH = 120
+				local HORIZONTAL_THRESHOLD = 260
+
+				local hueLayoutBusy = false
+				local function updateHueValuesLayout()
+					if hueLayoutBusy then
+						return
+					end
+					hueLayoutBusy = true
+					pcall(function()
+						if not HueValues.Visible then return end
+
+						local width = guiAbsSize(HueValues).X
+						local horizontal = width >= HORIZONTAL_THRESHOLD
+
+						local x, y = 0, 0
+						local totalHeight = 0
+
+						for _, item in ipairs(ITEMS) do
+							item.AnchorPoint = Vector2.new(1, 0)
+
+							if horizontal then
+								item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
+								item.Position = UDim2.new(1, -x, 0, 0)
+								x += ITEM_WIDTH + GAP
+								totalHeight = ITEM_HEIGHT
+							else
+								item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
+								item.Position = UDim2.new(1, 0, 0, -y)
+								y += ITEM_HEIGHT + GAP
+								totalHeight = y
+							end
+						end
+
+						HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
+						HueValues.Position = UDim2.new(0.5, 0,1, -50)
+
+						if Open then
+							if data.Type == "Gradient" then
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 305 + totalHeight) }
+								):Play()
+							else
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 290 + totalHeight) }
+								):Play()
+							end
+
+						end
+					end)
+					hueLayoutBusy = false
+				end
+
+				safeOnPropertyChanged(HueValues, "Size", updateHueValuesLayout)
+				safeOnPropertyChanged(colorpicker, "Size", updateHueValuesLayout)
+
+				colorpicker:SetAttribute("UpdateHueLayout", true)
+				pcall(function()
+					colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(function()
+						updateHueValuesLayout()
+					end)
+				end)
+
+				task.defer(updateHueValuesLayout)
+			end
+
+
+			colorpicker.color.Values.Hue.BackgroundTransparency = 1
+			colorpicker.color.Values.Hue.Pin.BackgroundTransparency = 1
+			colorpicker.color.Values.Hue.Pin.UIStroke.Transparency = 1
+			colorpicker.color.Values.Rainbow.ImageTransparency = 1
+
+			if data.Type == "Gradient" then
+				colorpicker.color.Values.Grad.BackgroundTransparency = 1
+				colorpicker.color.Values.Grad.Pin1.BackgroundTransparency = 1
+				colorpicker.color.Values.Grad.Pin1.UIStroke.Transparency = 1
+				colorpicker.color.Values.Grad.Pin2.BackgroundTransparency = 1
+				colorpicker.color.Values.Grad.Pin2.UIStroke.Transparency = 1
+			end
+
+			colorpicker.color.SVPicker.Pin.BackgroundTransparency = 1
+			colorpicker.color.SVPicker.Pin.UIStroke.Transparency = 1
+			colorpicker.color.SVPicker.Brightness.BackgroundTransparency = 1
+			colorpicker.color.SVPicker.Saturation.BackgroundTransparency = 1
+
+			colorpicker.HueValues.HEX.BackgroundTransparency = 1
+			colorpicker.HueValues.HEX.UIStroke.Transparency = 1
+			colorpicker.HueValues.HEX.V.HEXBox.TextTransparency = 1
+			colorpicker.HueValues.HEX.Copy.ImageTransparency = 1
+
+			colorpicker.HueValues.RGB.BackgroundTransparency = 1
+			colorpicker.HueValues.RGB.UIStroke.Transparency = 1
+			colorpicker.HueValues.RGB.V.RGBBox.TextTransparency = 1
+			colorpicker.HueValues.RGB.Copy.ImageTransparency = 1
+
+			colorpicker.HueValues.Link.BackgroundTransparency = 1
+			colorpicker.HueValues.Link.UIStroke.Transparency = 1
+			colorpicker.HueValues.Link.Frame.BackgroundTransparency = 1
+			colorpicker.HueValues.Link.Frame.ImageLabel.ImageTransparency = 1
+
+			colorpicker.QuickClose.Interactable = false
+
+			local recentContainer = colorpicker.color.Values.Recent
+			local spacing = 5
+			local frameSize = 12 
+
+			local function updateRecentLayout()
+				local children = {} 
+				for _, child in pairs(recentContainer:GetChildren()) do
+					if child:IsA("Frame") then
+						table.insert(children, child)
+					end
+				end
+
+				table.sort(children, function(a, b)
+					return a.LayoutOrder > b.LayoutOrder 
+				end)
+
+				local totalWidth = #children * frameSize + math.max(#children - 1, 0) * spacing
+				local startX = recentContainer.AbsoluteSize.X - totalWidth 
+
+				for _, frame in ipairs(children) do
+					--	frame.Position = UDim2.new(0, startX, 0.5, -frame.Size.Y.Offset / 2)
+					tweenservice:Create(frame, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {Position = UDim2.new(0, startX , 0.8, -frame.Size.Y.Offset / 2) }):Play()
+					startX += frameSize + spacing
+				end
+			end
+
+			recentContainer.ChildAdded:Connect(function(child)
+				if child:IsA("Frame") then
+					child.LayoutOrder = os.time() 
+					updateRecentLayout()
+				end
+			end)
+			recentContainer.ChildRemoved:Connect(updateRecentLayout)
+			updateRecentLayout()
+
+			local HSV
+
+			if data.Color then
+				HSV = { data.Color:ToHSV() }
+			else
+
+				HSV = { 0, 0, 0 }
+			end
+			local Selected = data.Color
+			local HueValue = HSV[1]
+
+			local function TableToColor(Table)
+				if type(Table) ~= "table" then return Table end
+				return Color3.fromHSV(Table[1],Table[2],Table[3])
+			end
+
+			local function FormatColor(Color, format, precision)
+
+				format = format or "RGB"
+				precision = precision or 2
+
+				local formattedColor = ""
+
+				if format == "RGB" then
+					return	math.round(Color.R * 255) .. "," .. math.round(Color.G * 255) .. "," .. math.round(Color.B * 255)
+				elseif format == "Hex" then
+					formattedColor = string.format("#%02X%02X%02X",
+						math.round(Color.R * 255),
+						math.round(Color.G * 255),
+						math.round(Color.B * 255)
+					)
+
+					return formattedColor
+				end
+			end
+
+			local SVPicker = colorpicker.color.SVPicker
+			local HUESlider = colorpicker.color.Values.Hue
+
+			SVPicker.Pin.BackgroundColor3 = data.Color
+			HUESlider.Pin.BackgroundColor3 = data.Color
+
+			local Keys
+			local ExternalGradient
+			local ActivePin = 1
+			local GradientFrame = colorpicker.color.Values:FindFirstChild("Grad")
+			local HueFrame = colorpicker.color.Values.Hue
+			local DraggingPin = nil
+
+			local function updatestuff()
+				data.Color = TableToColor(HSV)
+				colorpicker.color.glow.ImageColor3 = data.Color
+				colorpicker.color.BackgroundColor3 = data.Color
+
+				--	colorpicker.color.BackgroundColor3 = Color3.fromHSV(HSV[1], 1, 1)
+				local newColor = Color3.fromHSV(HSV[1], HSV[2], HSV[3])
+				local newColor2 = Color3.fromHSV(HSV[1], 1, 1)
+
+				if data.Type == "Gradient" and Keys and Keys[ActivePin] then
+					Keys[ActivePin] = ColorSequenceKeypoint.new(Keys[ActivePin].Time, newColor)
+
+					Keys[1] = ColorSequenceKeypoint.new(0, Keys[2].Value)
+					Keys[4] = ColorSequenceKeypoint.new(1, Keys[3].Value)
+
+					data.Color  = Keys[2].Value
+					data.Color2 = Keys[3].Value
+
+					local seq = ColorSequence.new(Keys)
+					if ExternalGradient then
+						ExternalGradient.Color = seq
+					end
+					GradientFrame.Gradient.Color = seq
+
+					GradientFrame.Pin1.BackgroundColor3 = data.Color
+					GradientFrame.Pin2.BackgroundColor3 = data.Color2
+				end
+
+
+				HueSat.Value = data.Color
+
+
+				tweenservice:Create(HUESlider.Pin, TweenInfo.new(0.1, Enum.EasingStyle.Exponential), {BackgroundColor3 = newColor2}):Play()
+				tweenservice:Create(SVPicker.Pin, TweenInfo.new(0.1, Enum.EasingStyle.Exponential), {BackgroundColor3 = newColor}):Play()
+
+
+				tweenservice:Create(SVPicker.Pin, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Position = UDim2.new(HSV[2], 0, 1 - HSV[3], 0)
+				}):Play()
+
+				tweenservice:Create(HUESlider.Pin, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Position = UDim2.new(1 - HSV[1], 0, 0.5, 0)
+				}):Play()
+
+				local formattedHex = FormatColor(data.Color, 'Hex')
+				colorpicker.HueValues.HEX.V.HEXBox.PlaceholderText = formattedHex
+
+				local formattedRGB = FormatColor(data.Color,'RGB', 2)
+				colorpicker.HueValues.RGB.V.RGBBox.PlaceholderText = formattedRGB
+
+				if data.CallBack then
+					data.CallBack(data.Color)
+				end
+
+				data.Color = data.Color
+			end
+			updatestuff()
+
+			local newColor = Color3.fromHSV(HSV[1], HSV[2], HSV[3])
+
+			local oldCallback = data.CallBack
+			data.CallBack = function(col)
+				if data.Type ~= "Gradient" then
+					if oldCallback then oldCallback(col) end
+					return
+				end
+
+				table.sort(Keys, function(a,b) return a.Time < b.Time end)
+
+				Keys[1] = ColorSequenceKeypoint.new(0, Keys[2].Value)
+				Keys[4] = ColorSequenceKeypoint.new(1, Keys[3].Value)
+
+				data.Color  = Keys[2].Value
+				data.Color2 = Keys[3].Value
+
+				local seq = ColorSequence.new(Keys)
+				ExternalGradient.Color = seq
+				GradientFrame.Gradient.Color = seq
+
+				if oldCallback then
+					oldCallback(seq, data.Color, data.Color2)
+				end
+			end
+
+
+			if data.Type == "Gradient" then
+				HueFrame.Visible = true
+				GradientFrame.Visible = true
+
+				ExternalGradient = data.GradientPath
+
+				local startCol = data.Color or ExternalGradient.Color.Keypoints[1].Value
+				local endCol = data.Color2 or ExternalGradient.Color.Keypoints[#ExternalGradient.Color.Keypoints].Value
+
+				Keys = {
+					ColorSequenceKeypoint.new(0, startCol),      
+					ColorSequenceKeypoint.new(0.2, startCol),  
+					ColorSequenceKeypoint.new(0.8, endCol),     
+					ColorSequenceKeypoint.new(1, endCol)         
+				}
+
+				ActivePin = 2 
+
+				GradientFrame.Pin1.BackgroundColor3 = startCol
+				GradientFrame.Pin2.BackgroundColor3 = endCol
+			end
+
+			local oldCallback = data.CallBack
+			data.CallBack = function(col)
+				if data.Type ~= "Gradient" then
+					if oldCallback then oldCallback(col) end
+					return
+				end
+
+				table.sort(Keys, function(a,b) return a.Time < b.Time end)
+				Keys[1] = ColorSequenceKeypoint.new(0, Keys[1].Value)
+				Keys[#Keys] = ColorSequenceKeypoint.new(1, Keys[#Keys].Value)
+
+				local seq = ColorSequence.new(Keys)
+				ExternalGradient.Color = seq
+				GradientFrame.Gradient.Color = seq
+
+				if oldCallback then oldCallback(seq) end
+			end
+
+			if data.Type == "Gradient" then
+				local g = GradientFrame
+				local UIS = game:GetService("UserInputService")
+				local RS = game:GetService("RunService")
+				local mouse = game.Players.LocalPlayer:GetMouse()
+
+				local function updateUI()
+					g.Pin1.Position = UDim2.new(Keys[2].Time, 0, 0.5, 0)
+					g.Pin1.BackgroundColor3 = Keys[2].Value
+
+					g.Pin2.Position = UDim2.new(Keys[3].Time, 0, 0.5, 0)
+					g.Pin2.BackgroundColor3 = Keys[3].Value
+
+					local seq = ColorSequence.new(Keys)
+					ExternalGradient.Color = seq
+					g.Gradient.Color = seq
+				end
+
+				g.Pin1.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						DraggingPin = 2
+						ActivePin = 2
+						local h, s, v = Keys[2].Value:ToHSV()
+						HSV[1], HSV[2], HSV[3] = h, s, v
+						updatestuff()
+					end
+				end)
+
+				g.Pin2.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						DraggingPin = 3
+						ActivePin = 3
+						local h, s, v = Keys[3].Value:ToHSV()
+						HSV[1], HSV[2], HSV[3] = h, s, v
+						updatestuff()
+					end
+				end)
+
+				UIS.InputEnded:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						DraggingPin = nil
+					end
+				end)
+
+				RS.Heartbeat:Connect(function()
+					if not DraggingPin then return end
+
+					local relX = (mouse.X - g.AbsolutePosition.X) / g.AbsoluteSize.X
+					relX = math.clamp(relX, 0, 1)
+
+					if DraggingPin == 2 then
+						relX = math.clamp(relX, 0, Keys[3].Time - 0.01) 
+					elseif DraggingPin == 3 then
+						relX = math.clamp(relX, Keys[2].Time + 0.01, 1) 
+					end
+
+					Keys[DraggingPin] = ColorSequenceKeypoint.new(relX, Keys[DraggingPin].Value)
+
+					updateUI()
+				end)
+
+				updateUI()
+			end
+
+			local function OpenPicker()
+				Open = true
+				DeBounce = true
+				colorpicker.color.Values.Visible = true
+				colorpicker.color.SVPicker.Visible = true
+
+				colorpicker.HueValues.Visible = true
+				colorpicker.color.Values.Recent.Visible = true
+
+				colorpicker.interact.Interactable = false
+				colorpicker.QuickClose.Interactable = true
+
+				colorpicker.HueValues.Visible = true
+
+				local displayGrad = colorpicker.color:FindFirstChildOfClass("UIGradient")
+				if displayGrad then
+					displayGrad.Enabled = false
+				end
+
+				colorpicker:SetAttribute("UpdateHueLayout", not colorpicker:GetAttribute("UpdateHueLayout"))
+
+
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.95, Enum.EasingStyle.Quart ), { Size = UDim2.new(0, 1,0, 1) }):Play()
+				tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(35, 35, 35) }):Play()
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundColor3 = data.Color }):Play()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.glow, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 1}):Play()
+				task.wait(0.12)
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.9, Enum.EasingStyle.Quart ), { Size = UDim2.new(1, -40,0, 160) }):Play()
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.9, Enum.EasingStyle.Quart ), { Position = UDim2.new(0.5, 0,0, 40) }):Play()
+
+				tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(17, 17, 17) }):Play()
+				--	tweenservice:Create(colorpicker, TweenInfo.new( 0.8, Enum.EasingStyle.Quart ), { Size = UDim2.new(1, -35,0, 350) }):Play()
+				tweenservice:Create(colorpicker.color.UICorner, TweenInfo.new( 0.8, Enum.EasingStyle.Quart ), { CornerRadius = UDim.new(0, 10) }):Play()
+
+				tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+
+				task.wait(0.6)
+
+				tweenservice:Create(colorpicker.color.SVPicker.Brightness, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Saturation, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Pin, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Pin.UIStroke, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+
+				task.wait(0.5)
+				tweenservice:Create(colorpicker.color.Values.Hue, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.Values.Hue.Pin, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.color.Values.Hue.Pin.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+
+				if data.Type == "Gradient" then
+					tweenservice:Create(colorpicker.color.Values.Grad, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin1, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin1.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin2, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin2.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0 }):Play()
+				end
+
+
+				tweenservice:Create(colorpicker.HueValues.HEX, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.V.HEXBox, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { TextTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.Copy, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+				task.wait(0.09)
+				tweenservice:Create(colorpicker.HueValues.RGB, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.V.RGBBox, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { TextTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.Copy, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+				task.wait(0.09)
+				tweenservice:Create(colorpicker.HueValues.Link, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0.9 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 0.4 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.Frame.ImageLabel, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { ImageTransparency = 0 }):Play()
+
+				for _,v in ipairs(colorpicker.color.Values.Recent:GetChildren()) do
+					if v:IsA('Frame') then
+						task.wait(0.1)
+						tweenservice:Create(v, TweenInfo.new( 0.3, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 0 }):Play()
+					end
+				end
+
+				task.wait(0.7)
+				DeBounce = false
+			end
+
+
+			colorpicker.interact.MouseButton1Click:Connect(function()
+				if DeBounce then return end
+				if not Open then
+					Open = true
+					OpenPicker()
+				end
+			end)
+
+			colorpicker.QuickClose.hitbox.MouseEnter:Connect(function()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 70,0, 3) }):Play()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+			end)
+
+			colorpicker.QuickClose.hitbox.MouseLeave:Connect(function()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 60,0, 3) }):Play()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundColor3 = Color3.fromRGB(33, 33, 33) }):Play()
+			end)
+
+			local displayGrad = colorpicker.color:FindFirstChildOfClass("UIGradient")
+
+			if data.Type == "Gradient" and displayGrad then
+				displayGrad.Enabled = true
+				displayGrad.Color = ColorSequence.new(Keys)
+				-- Set to White so the gradient isn't "multiplied" or tinted by a background color
+				tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.new(1, 1, 1) }):Play()
+			else
+				if displayGrad then displayGrad.Enabled = false end
+				tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = data.Color }):Play()
+			end
+
+			local function ClosePicker()
+				Open = false
+				DeBounce = true
+				tweenservice:Create(colorpicker, TweenInfo.new( 0.55, Enum.EasingStyle.Quint ), { Size = UDim2.new(1, -35,0, 40) }):Play()
+				--	tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.7, Enum.EasingStyle.Quart ), { Position = UDim2.new(1, -30,0, 10)}):Play()
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.55, Enum.EasingStyle.Quint ), { Size = UDim2.new(0, 20,0, 20) }):Play()
+				tweenservice:Create(colorpicker.color, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundColor3 = data.Color }):Play()
+				tweenservice:Create(colorpicker.QuickClose, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.glow, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 0.7}):Play()
+				colorpicker.interact.Interactable = true
+				colorpicker.QuickClose.Interactable = false
+
+				--	task.wait(0.6)
+
+				tweenservice:Create(colorpicker.color.SVPicker.Brightness, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Saturation, TweenInfo.new( 2, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Pin, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.SVPicker.Pin.UIStroke, TweenInfo.new( 0.4, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+
+				tweenservice:Create(colorpicker.color.Values.Hue, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.Values.Hue.Pin, TweenInfo.new( 1, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.color.Values.Hue.Pin.UIStroke, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+
+				tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+				local displayGrad = colorpicker.color:FindFirstChildOfClass("UIGradient")
+
+				if data.Type == "Gradient" and displayGrad then
+					displayGrad.Enabled = true
+					displayGrad.Color = ColorSequence.new(Keys)
+					-- Set to White so the gradient isn't "multiplied" or tinted by a background color
+					tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = Color3.new(1, 1, 1) }):Play()
+				else
+					if displayGrad then displayGrad.Enabled = false end
+					tweenservice:Create(colorpicker.color, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundColor3 = data.Color }):Play()
+				end
+
+				if data.Type == "Gradient" then
+					tweenservice:Create(colorpicker.color.Values.Grad, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin1, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin1.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin2, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					tweenservice:Create(colorpicker.color.Values.Grad.Pin2.UIStroke, TweenInfo.new( 0.8, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+				end
+
+				tweenservice:Create(colorpicker.HueValues.RGB, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.UIStroke, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.V.RGBBox, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { TextTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.RGB.Copy, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+				tweenservice:Create(colorpicker.HueValues.HEX, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.UIStroke, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.V.HEXBox, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { TextTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.HEX.Copy, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+
+				tweenservice:Create(colorpicker.HueValues.Link, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.UIStroke, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { Transparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+				tweenservice:Create(colorpicker.HueValues.Link.Frame.ImageLabel, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { ImageTransparency = 1 }):Play()
+				colorpicker.HueValues.Visible = false
+				for _,v in ipairs(colorpicker.color.Values.Recent:GetChildren()) do
+					if v:IsA('Frame') then
+						tweenservice:Create(v, TweenInfo.new( 0.6, Enum.EasingStyle.Exponential ), { BackgroundTransparency = 1 }):Play()
+					end
+				end
+				task.wait(1)
+				colorpicker.color.SVPicker.Visible = false
+				colorpicker.color.Values.Recent.Visible = false
+				task.wait(0.7)
+				DeBounce = false
+			end
+
+			colorpicker.QuickClose.hitbox.MouseButton1Click:Connect(function()
+				if DeBounce then return end
+				if Open then
+					Open = false
+					ClosePicker()
+				end
+			end)
+
+
+			for _,v in ipairs(colorpicker.HueValues:GetChildren()) do
+				if v:IsA("Frame") then
+					for _,v2 in ipairs(v:GetChildren()) do
+						if v2:IsA("ImageLabel") then
+							v2.MouseEnter:Connect(function()
+								tweenservice:Create(v2, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+							end)
+							v2.MouseLeave:Connect(function()
+								tweenservice:Create(v2, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageColor3 = Color3.fromRGB(66, 66, 66) }):Play()
+							end)
+						end
+					end
+				end
+			end
+
+			-- copy hex / rgb to clipboard
+			syde:OnClick(colorpicker.HueValues.HEX.Copy, function()
+				if syde:SetClipboard(FormatColor(data.Color, 'Hex')) then syde:FlashCopy(colorpicker.HueValues.HEX.Copy) end
+			end)
+			syde:OnClick(colorpicker.HueValues.RGB.Copy, function()
+				if syde:SetClipboard(FormatColor(data.Color, 'RGB', 2)) then syde:FlashCopy(colorpicker.HueValues.RGB.Copy) end
+			end)
+
+			local function AddRecentColor(newColor)
+				local recentFrame = colorpicker.colorPlaceHolder:Clone()
+				recentFrame.Visible = true
+				recentFrame.Parent = colorpicker.color.Values.Recent
+				recentFrame.BackgroundColor3 = newColor
+
+				recentFrame.interact.MouseButton1Click:Connect(function()
+				--[[	tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 5,0, 5) }):Play()
+					task.wait(0.09)
+					tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 12,0, 12) }):Play() ]]
+
+					local h, s, v = newColor:ToHSV()
+					if s > 0.02 then
+						HSV[1] = h
+					end
+					HSV[2] = s
+					HSV[3] = v
+					updatestuff()
+
+				end)
+
+				recentFrame.interact.MouseEnter:Connect(function()
+					tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 20,0, 20) }):Play()
+				end)
+
+				recentFrame.interact.MouseLeave:Connect(function()
+					tweenservice:Create(recentFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 12,0, 12) }):Play()
+				end)
+
+				local maxRecentColors = 10
+				local recentContainer = colorpicker.color.Values.Recent
+
+				local children = recentContainer:GetChildren()
+				if #children > maxRecentColors then
+					for _, child in ipairs(children) do
+						if child:IsA("Frame") then
+							child:Destroy()
 							break
 						end
 					end
 				end
 			end
-		end
-	end
-end
-hub:CreateModule("Auto Buy", {
-	name = "Pet Sniper",
-	on = false,
-	bind = "None",
-	desc = "Auto tame wild pets.",
-	callback = function(enabled)
-		petsniperrunning = enabled
-		if enabled then
-			task.spawn(function()
-				while petsniperrunning do
-					pcall(dopetsniper)
-					task.wait(petsniperdelay)
-				end
-			end)
-		end
-	end,
-	opts = {
-		{type = "slider", label = "Snipe Delay", value = 1, min = 0.5, max = 15, suffix = "s", callback = function(value)
-			petsniperdelay = value
-		end},
-		{type = "multiselect", label = "Filter Pets", value = "", list = gameLists.pets, callback = function(value)
-			petsniperlist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "pets")
-		end},
-		{type = "multiselect", label = "Filter Rarities", value = "", list = gameLists.rarities, callback = function(value)
-			petsniperrarities = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "rarities")
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			petsnipermutlist = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "mutations")
-		end},
-		{type = "textbox", label = "Min Currency Reserve", value = "0", placeholder = "Reserve currency...", callback = function(value)
-			petsniperreserve = tonumber(value) or 0
-		end},
-	}
-})
-local PREDICT_RESTOCK_PERIOD = 300
-local PREDICT_TIME_CYCLE = 600
-local PREDICT_SCHEDULE_REPEAT = 2016
-local PREDICT_COMMUNITY_URL = "https://raw.githubusercontent.com/jcgaming-official/GAG-2-Predictor/main/script.js"
-local predictShopOffsets = {
-	SeedShop = 0,
-	GearShop = 0,
-	CrateShop = 0,
-}
-local predictShopCalibrated = {
-	SeedShop = false,
-	GearShop = false,
-	CrateShop = false,
-}
-local predictCommunitySchedules = nil
-local predictCommunityAnchors = {
-	SeedShop = 0,
-	GearShop = 0,
-	CrateShop = 0,
-}
-local predictCommunityNames = {
-	SeedShop = {},
-	GearShop = {},
-	CrateShop = {},
-}
-local predictCommunityLoaded = false
-local predictRollSeedAdd = {
-	SeedShop = 3,
-	GearShop = 1,
-	CrateShop = 2,
-}
-local loadPredictCommunitySchedules
-local predictStockFromCommunity
-local predictStockFromRoll
-local calibratePredictShopOffset
-local predictShopStockAt
-local predictMoonColors = {
-	Moon = "rgb(150,170,255)",
-	Goldmoon = "rgb(255,210,70)",
-	["Rainbow Moon"] = "rgb(190,120,255)",
-	Bloodmoon = "rgb(240,80,80)",
-	["Mega Moon"] = "rgb(120,160,255)",
-}
-local predictWeatherMeta = {
-	Rain = { occurance = 120, last = 300, color = "rgb(80,150,255)" },
-	Lightning = { occurance = 90, last = 300, color = "rgb(255,215,0)" },
-	Rainbow = { occurance = 60, last = 300, color = "rgb(255,100,255)" },
-	Snowfall = { occurance = 30, last = 150, color = "rgb(150,220,255)" },
-	Starfall = { occurance = 30, last = 150, color = "rgb(180,100,255)" },
-	Aurora = { occurance = 30, last = 150, color = "rgb(100,255,170)" },
-	Sunburst = { occurance = 30, last = 300, color = "rgb(255,120,0)" },
-	Eclipse = { occurance = 30, last = 150, color = "rgb(200,200,220)" },
-}
-local predictTimePhases = nil
-local predictNightPhaseIndex = 3
-local predictMoonGating = nil
-local predictTimeCycleData = nil
 
-local function getPredictServerNow()
-	return workspace:GetServerTimeNow()
-end
+			local SV, HUE = nil, nil
 
-local function formatPredictClock(unixTime)
-	return os.date("%H:%M:%S", math.floor(tonumber(unixTime) or 0))
-end
+			syde:AddConnection(SVPicker.InputBegan, function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					SV = runservice.RenderStepped:Connect(function()
+						local mouse = game.Players.LocalPlayer:GetMouse()
+						local ColorX = math.clamp(mouse.X - SVPicker.AbsolutePosition.X, 0, SVPicker.AbsoluteSize.X) / SVPicker.AbsoluteSize.X
+						local ColorY = math.clamp(mouse.Y - SVPicker.AbsolutePosition.Y, 0, SVPicker.AbsoluteSize.Y) / SVPicker.AbsoluteSize.Y
 
-local function formatPredictCountdown(seconds)
-	seconds = math.max(0, math.floor(tonumber(seconds) or 0))
-	if seconds >= 3600 then
-		return string.format("%dh %02dm %02ds", math.floor(seconds / 3600), math.floor((seconds % 3600) / 60), seconds % 60)
-	end
-	return formatSessionTime(seconds)
-end
+						HSV[2] = ColorX
+						HSV[3] = 1 - ColorY
 
-local function predictWhite(text)
-	return string.format('<font color="rgb(255,255,255)">%s</font>', tostring(text))
-end
-
-local function predictLabel(label, value)
-	return string.format('<font color="rgb(180,200,220)">%s:</font> %s', label, predictWhite(value))
-end
-
-local function ensurePredictModules()
-	if predictTimeCycleData and predictMoonGating and predictTimePhases then
-		return true
-	end
-	local sharedModules = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules") or game:GetService("ReplicatedStorage"):WaitForChild("SharedModules", 3)
-	if not sharedModules then
-		return false
-	end
-	local timeCycleVal = sharedModules:FindFirstChild("TimeCycleData") or sharedModules:WaitForChild("TimeCycleData", 2)
-	local moonGatingVal = sharedModules:FindFirstChild("MoonGating") or sharedModules:WaitForChild("MoonGating", 2)
-	if not timeCycleVal or not moonGatingVal then
-		return false
-	end
-	local okTcd, tcd = pcall(require, timeCycleVal)
-	local okMg, mg = pcall(require, moonGatingVal)
-	if not okTcd or not okMg or not tcd or not tcd.Data then
-		return false
-	end
-	predictTimeCycleData = tcd
-	predictMoonGating = mg
-	predictTimePhases = {}
-	for phaseName, phaseData in tcd.Data do
-		table.insert(predictTimePhases, {
-			Name = phaseName,
-			Order = phaseData.StartOrder or 999,
-			Duration = phaseData.Lasts or 0,
-			Weathers = phaseData.Weathers,
-		})
-	end
-	table.sort(predictTimePhases, function(a, b)
-		return a.Order < b.Order
-	end)
-	predictNightPhaseIndex = 3
-	for index, phase in predictTimePhases do
-		if phase.Name == "Night" then
-			predictNightPhaseIndex = index
-			break
-		end
-	end
-	local weatherDataVal = sharedModules:FindFirstChild("WeatherData") or sharedModules:WaitForChild("WeatherData", 2)
-	if weatherDataVal then
-		local okWd, wd = pcall(require, weatherDataVal)
-		if okWd and wd and wd.Data then
-			for _, weatherEntry in wd.Data do
-				if weatherEntry.Name and predictWeatherMeta[weatherEntry.Name] then
-					predictWeatherMeta[weatherEntry.Name].occurance = weatherEntry.Occurance or predictWeatherMeta[weatherEntry.Name].occurance
-					predictWeatherMeta[weatherEntry.Name].last = weatherEntry.Last or predictWeatherMeta[weatherEntry.Name].last
-				end
-			end
-		end
-	end
-	return true
-end
-
-local function pickPredictWeather(phaseData, rng)
-	if not phaseData or not phaseData.Weathers or not predictMoonGating then
-		return "Moon"
-	end
-	local totalChance = 0
-	for weatherName, weatherInfo in phaseData.Weathers do
-		if not weatherInfo.AdminOnly and predictMoonGating.IsNaturallySpawnable(weatherName) then
-			totalChance = totalChance + (weatherInfo.Chance or 0)
-		end
-	end
-	if totalChance <= 0 then
-		return "Moon"
-	end
-	local roll = rng:NextNumber() * totalChance
-	local accumulator = 0
-	for weatherName, weatherInfo in phaseData.Weathers do
-		if not weatherInfo.AdminOnly and predictMoonGating.IsNaturallySpawnable(weatherName) then
-			accumulator = accumulator + (weatherInfo.Chance or 0)
-			if roll <= accumulator then
-				return weatherName
-			end
-		end
-	end
-	for weatherName in phaseData.Weathers do
-		if predictMoonGating.IsNaturallySpawnable(weatherName) then
-			return weatherName
-		end
-	end
-	return "Moon"
-end
-
-local function predictNightMoon(cycleId)
-	if not ensurePredictModules() then
-		return "Moon"
-	end
-	local nightPhase = predictTimeCycleData.Data.Night
-	if not nightPhase then
-		return "Moon"
-	end
-	local rng = Random.new(cycleId * 1000 + predictNightPhaseIndex)
-	return pickPredictWeather(nightPhase, rng)
-end
-
-local function getPredictCycleInfo(now)
-	now = now or getPredictServerNow()
-	if not ensurePredictModules() then
-		return 0, "Unknown", 0, 0
-	end
-	local totalDuration = 0
-	for _, phase in predictTimePhases do
-		totalDuration = totalDuration + phase.Duration
-	end
-	if totalDuration <= 0 then
-		totalDuration = PREDICT_TIME_CYCLE
-	end
-	local cycleId = math.floor(now / totalDuration)
-	local inCycle = now % totalDuration
-	local elapsed = 0
-	for _, phase in predictTimePhases do
-		if inCycle < elapsed + phase.Duration then
-			return cycleId, phase.Name, math.max(0, elapsed + phase.Duration - inCycle), inCycle - elapsed
-		end
-		elapsed = elapsed + phase.Duration
-	end
-	return cycleId, predictTimePhases[#predictTimePhases].Name or "Night", 0, 0
-end
-
-local function getPredictCycleDuration()
-	if not ensurePredictModules() then
-		return PREDICT_TIME_CYCLE
-	end
-	local totalDuration = 0
-	for _, phase in predictTimePhases do
-		totalDuration = totalDuration + phase.Duration
-	end
-	return totalDuration > 0 and totalDuration or PREDICT_TIME_CYCLE
-end
-
-local function getNightStartUnix(cycleId)
-	if not ensurePredictModules() then
-		return cycleId * PREDICT_TIME_CYCLE + 480
-	end
-	local offset = 0
-	for _, phase in predictTimePhases do
-		if phase.Name == "Night" then
-			break
-		end
-		offset = offset + phase.Duration
-	end
-	return cycleId * getPredictCycleDuration() + offset
-end
-
-local function buildPredictCycleText()
-	if not ensurePredictModules() then
-		return "Time cycle data unavailable."
-	end
-	local now = getPredictServerNow()
-	local cycleId, phaseName, phaseLeft = getPredictCycleInfo(now)
-	local activeWeather = workspace:GetAttribute("ActiveWeather")
-	local adminWeather = type(activeWeather) == "string" and activeWeather ~= "" and activeWeather or nil
-	local lines = {
-		predictLabel("Server time", formatPredictClock(now)),
-		string.format('<font color="rgb(180,200,220)">Cycle #%d</font> · %s', cycleId, predictLabel("Phase", phaseName)),
-		predictLabel("Phase ends in", formatPredictCountdown(phaseLeft)),
-	}
-	if phaseName == "Night" then
-		local moonName = adminWeather or predictNightMoon(cycleId)
-		local moonColor = predictMoonColors[moonName] or "rgb(200,200,210)"
-		lines[#lines + 1] = string.format('Tonight: <font color="%s">%s</font>%s', moonColor, moonName, adminWeather and predictWhite(" (admin)") or "")
-	else
-		local nextNight = getNightStartUnix(cycleId)
-		if nextNight <= now then
-			nextNight = getNightStartUnix(cycleId + 1)
-		end
-		local nextMoon = predictNightMoon(math.floor(nextNight / getPredictCycleDuration()))
-		local moonColor = predictMoonColors[nextMoon] or "rgb(200,200,210)"
-		lines[#lines + 1] = string.format('Next night (%s): <font color="%s">%s</font>', predictWhite(formatPredictClock(nextNight)), moonColor, nextMoon)
-	end
-	return table.concat(lines, "\n")
-end
-
-local function buildPredictMoonText()
-	if not ensurePredictModules() then
-		return "Moon prediction unavailable."
-	end
-	local now = getPredictServerNow()
-	local endTime = now + (24 * 3600)
-	local events = {}
-	local cycleDuration = getPredictCycleDuration()
-	local cycleId = math.floor(now / cycleDuration)
-	local lastCycle = math.ceil(endTime / cycleDuration)
-	for cid = cycleId, lastCycle do
-		local nightStart = getNightStartUnix(cid)
-		if nightStart >= now and nightStart <= endTime then
-			local moonName = predictNightMoon(cid)
-			if moonName ~= "Moon" then
-				table.insert(events, { time = nightStart, name = moonName })
-			end
-		end
-	end
-	table.sort(events, function(a, b)
-		return a.time < b.time
-	end)
-	local lines = {}
-	for _, event in events do
-		local moonColor = predictMoonColors[event.name] or "rgb(200,200,210)"
-		table.insert(lines, string.format('<font color="%s">%s</font> — %s', moonColor, predictWhite(formatPredictClock(event.time)), predictWhite(event.name)))
-	end
-	if #lines == 0 then
-		return predictWhite("No rare moons in the next 24 hours.")
-	end
-	return table.concat(lines, "\n")
-end
-
-local function buildPredictWeatherText()
-	local weatherValues = game:GetService("ReplicatedStorage"):FindFirstChild("WeatherValues")
-	if not weatherValues then
-		return "WeatherValues unavailable."
-	end
-	local now = DateTime.now().UnixTimestamp
-	local weatherOrder = {"Rain", "Lightning", "Rainbow", "Snowfall", "Starfall", "Aurora", "Sunburst", "Eclipse"}
-	local rows = {}
-	for _, weatherName in weatherOrder do
-		local meta = predictWeatherMeta[weatherName]
-		if meta then
-			local isPlaying = weatherValues:GetAttribute(weatherName .. "_Playing") == true
-			local endTime = weatherValues:GetAttribute(weatherName .. "_EndTime") or 0
-			local timeLeft = math.max(0, endTime - now)
-			local nextEarliest = endTime + (meta.occurance or 60)
-			local nextIn = math.max(0, nextEarliest - now)
-			table.insert(rows, {
-				name = weatherName,
-				meta = meta,
-				isPlaying = isPlaying,
-				timeLeft = timeLeft,
-				nextIn = nextIn,
-			})
-		end
-	end
-	table.sort(rows, function(a, b)
-		if a.isPlaying ~= b.isPlaying then
-			return a.isPlaying
-		end
-		if a.isPlaying then
-			return a.timeLeft > b.timeLeft
-		end
-		return a.nextIn < b.nextIn
-	end)
-	local lines = {}
-	for _, entry in rows do
-		local color = entry.meta.color or "rgb(200,200,210)"
-		if entry.isPlaying then
-			table.insert(lines, string.format('<font color="%s">%s</font> ACTIVE · %s left', color, entry.name, formatPredictCountdown(entry.timeLeft)))
-		else
-			local nextLabel = entry.nextIn <= 0 and "Soon" or formatPredictCountdown(entry.nextIn)
-			table.insert(lines, string.format('%s next ≥ %s', entry.name, nextLabel))
-		end
-	end
-	if #lines == 0 then
-		return "No weather data."
-	end
-	return table.concat(lines, "\n")
-end
-
-function readShopStockSnapshot(shopFolder)
-	local snapshot = {}
-	if not shopFolder then
-		return snapshot
-	end
-	local itemsFolder = shopFolder:FindFirstChild("Items")
-	if not itemsFolder then
-		return snapshot
-	end
-	for _, itemValue in itemsFolder:GetChildren() do
-		if itemValue.Value and itemValue.Value > 0 then
-			snapshot[itemValue.Name] = itemValue.Value
-		end
-	end
-	return snapshot
-end
-
-local function getPredictScheduleIndex(unix, shopName, offset)
-	local anchor = predictCommunityAnchors[shopName]
-	if not anchor or anchor <= 0 then
-		return 0
-	end
-	local cycleIndex = math.floor((unix - anchor) / PREDICT_RESTOCK_PERIOD)
-	return ((cycleIndex + (offset or 0)) % PREDICT_SCHEDULE_REPEAT) + 1
-end
-
-local function parseCommunityIconNames(body, sectionKey, nextSectionKey)
-	local names = {}
-	local section = body:match("ICON_URLS.-" .. sectionKey .. ":%s*({.-})%s*,%s*" .. nextSectionKey)
-	if not section then
-		return names
-	end
-	for itemName in section:gmatch('"([^"]+)"%s*:') do
-		table.insert(names, itemName)
-	end
-	return names
-end
-
-local function parseCommunityQArrays(body, sectionKey, nextSectionKey)
-	local startPos = body:find('"' .. sectionKey .. '"', 1, true)
-	local endPos = body:find('"' .. nextSectionKey .. '"', startPos and (startPos + 1) or 1, true)
-	if not startPos or not endPos then
-		return {}
-	end
-	local section = body:sub(startPos, endPos)
-	local arrays = {}
-	for qChunk in section:gmatch('"q"%s*:%s*%[([^%]]+)%]') do
-		local nums = {}
-		for numberText in qChunk:gmatch("%d+") do
-			table.insert(nums, tonumber(numberText))
-		end
-		if #nums >= PREDICT_SCHEDULE_REPEAT then
-			table.insert(arrays, nums)
-		end
-	end
-	return arrays
-end
-
-loadPredictCommunitySchedules = function()
-	if predictCommunityLoaded then
-		return predictCommunitySchedules ~= nil
-	end
-	predictCommunityLoaded = true
-	local ok, body = pcall(function()
-		return game:HttpGet(PREDICT_COMMUNITY_URL)
-	end)
-	if not ok or typeof(body) ~= "string" or body == "" then
-		return false
-	end
-	predictCommunityAnchors.SeedShop = tonumber(body:match('"seedAnchor"%s*:%s*(%d+)')) or 0
-	predictCommunityAnchors.GearShop = tonumber(body:match('"gearAnchor"%s*:%s*(%d+)')) or predictCommunityAnchors.SeedShop
-	predictCommunityAnchors.CrateShop = tonumber(body:match('"crateAnchor"%s*:%s*(%d+)')) or predictCommunityAnchors.SeedShop
-	predictCommunityNames.SeedShop = parseCommunityIconNames(body, "seeds", "gears")
-	predictCommunityNames.GearShop = parseCommunityIconNames(body, "gears", "crates")
-	predictCommunityNames.CrateShop = parseCommunityIconNames(body, "crates", "seedAnchor")
-	predictCommunitySchedules = {
-		SeedShop = parseCommunityQArrays(body, "seeds", "gears"),
-		GearShop = parseCommunityQArrays(body, "gears", "crates"),
-		CrateShop = parseCommunityQArrays(body, "crates", "seedAnchor"),
-	}
-	return true
-end
-
-predictStockFromCommunity = function(shopName, unix, offset)
-	if not predictCommunitySchedules then
-		return nil
-	end
-	local names = predictCommunityNames[shopName]
-	local arrays = predictCommunitySchedules[shopName]
-	if not names or not arrays or #names == 0 then
-		return nil
-	end
-	local scheduleIndex = getPredictScheduleIndex(unix, shopName, offset)
-	local stockMap = {}
-	for arrayIndex, quantities in arrays do
-		local itemName = names[arrayIndex]
-		local quantity = quantities[scheduleIndex]
-		if itemName and quantity and quantity > 0 then
-			stockMap[itemName] = quantity
-		end
-	end
-	if next(stockMap) == nil then
-		return nil
-	end
-	return stockMap
-end
-
-local function getPredictShopCatalog(shopName)
-	local sharedModules = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules")
-	if not sharedModules then
-		return {}
-	end
-	local moduleName = shopName == "SeedShop" and "SeedData" or (shopName == "GearShop" and "GearShopData" or "CrateData")
-	local enabledModule = shopName == "SeedShop" and "SeedShopEnabled" or (shopName == "GearShop" and "GearShopEnabled" or "CrateShopEnabled")
-	local okData, dataModule = pcall(require, sharedModules:WaitForChild(moduleName, 2))
-	if not okData or not dataModule then
-		return {}
-	end
-	local enabledChecker = nil
-	local enabledVal = sharedModules:FindFirstChild(enabledModule)
-	if enabledVal then
-		local okEnabled, enabledMod = pcall(require, enabledVal)
-		if okEnabled and enabledMod then
-			enabledChecker = enabledMod
-		end
-	end
-	local items = {}
-	local function getItemName(entry)
-		return entry.SeedName or entry.GearName or entry.CrateName or entry.Name
-	end
-	local function isEnabled(itemName, entry)
-		if shopName == "SeedShop" and enabledChecker and enabledChecker.IsSeedEnabled then
-			return enabledChecker.IsSeedEnabled(itemName) == true
-		end
-		if shopName == "GearShop" and enabledChecker and enabledChecker.IsGearEnabled then
-			return enabledChecker.IsGearEnabled(itemName) == true
-		end
-		if shopName == "CrateShop" and enabledChecker and enabledChecker.IsCrateEnabled then
-			return enabledChecker.IsCrateEnabled(itemName) == true
-		end
-		return entry.RestockShop == true
-	end
-	if shopName == "CrateShop" then
-		for _, entry in dataModule do
-			if type(entry) == "table" and entry.RestockShop and getItemName(entry) and isEnabled(getItemName(entry), entry) and isShopItemInCurrentWorld(shopName, getItemName(entry)) then
-				table.insert(items, entry)
-			end
-		end
-	else
-		for _, entry in dataModule do
-			if type(entry) == "table" and entry.RestockShop and getItemName(entry) and isEnabled(getItemName(entry), entry) and isShopItemInCurrentWorld(shopName, getItemName(entry)) then
-				table.insert(items, entry)
-			end
-		end
-	end
-	table.sort(items, function(a, b)
-		return (a.SeedShopDisplayOrder or a.GearShopDisplayOrder or 999) < (b.SeedShopDisplayOrder or b.GearShopDisplayOrder or 999)
-	end)
-	return items
-end
-
-predictStockFromRoll = function(shopName, unix)
-	local items = getPredictShopCatalog(shopName)
-	if #items == 0 then
-		return nil
-	end
-	local cycleIndex = math.floor(unix / PREDICT_RESTOCK_PERIOD) + (predictRollSeedAdd[shopName] or 0)
-	local rng = Random.new(cycleIndex)
-	local stockMap = {}
-	for _, entry in items do
-		local itemName = entry.SeedName or entry.GearName or entry.CrateName or entry.Name
-		if not isShopItemInCurrentWorld(shopName, itemName) then
-			continue
-		end
-		local chance = entry.RestockChance or 0
-		if chance > 0 and rng:NextInteger(1, 100) <= chance then
-			local restockValues = entry.RestockValues
-			if restockValues then
-				stockMap[itemName] = rng:NextInteger(restockValues.Min, restockValues.Max)
-			end
-		end
-	end
-	if next(stockMap) == nil then
-		return nil
-	end
-	return stockMap
-end
-
-local function countPredictStockMatches(expected, actual)
-	if typeof(expected) ~= "table" or typeof(actual) ~= "table" then
-		return 0
-	end
-	local matches = 0
-	for itemName, quantity in expected do
-		if actual[itemName] == quantity then
-			matches = matches + 1
-		end
-	end
-	return matches
-end
-
-local function mergePredictStockMaps(primary, secondary)
-	local merged = {}
-	if typeof(primary) == "table" then
-		for itemName, quantity in primary do
-			merged[itemName] = quantity
-		end
-	end
-	if typeof(secondary) == "table" then
-		for itemName, quantity in secondary do
-			if merged[itemName] == nil then
-				merged[itemName] = quantity
-			end
-		end
-	end
-	return merged
-end
-
-calibratePredictShopOffset = function(shopName)
-	local ok, err = pcall(function()
-	local stockValues = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-	local shopFolder = stockValues and stockValues:FindFirstChild(shopName)
-	local lastRestock = shopFolder and shopFolder:FindFirstChild("UnixLastRestock")
-	if not lastRestock then
-		return
-	end
-	local currentStock = filterPredictStockByWorld(readShopStockSnapshot(shopFolder), shopName)
-	if next(currentStock) == nil then
-		return
-	end
-	if loadPredictCommunitySchedules() then
-		local bestOffset, bestMatches = predictShopOffsets[shopName] or 0, -1
-		for offset = 0, PREDICT_SCHEDULE_REPEAT - 1 do
-			local predicted = filterPredictStockByWorld(predictStockFromCommunity(shopName, lastRestock.Value, offset), shopName)
-			local matches = countPredictStockMatches(currentStock, predicted)
-			if matches > bestMatches then
-				bestMatches = matches
-				bestOffset = offset
-			end
-			if offset % 128 == 127 then
-				task.wait()
-			end
-		end
-		if bestMatches >= 2 then
-			predictShopOffsets[shopName] = bestOffset
-		end
-	end
-	local bestRollMatches = -1
-	local bestRollSeedAdd = predictRollSeedAdd[shopName] or 0
-	for seedAdd = -10, 10 do
-		predictRollSeedAdd[shopName] = seedAdd
-		local rolled = predictStockFromRoll(shopName, lastRestock.Value)
-		local matches = countPredictStockMatches(currentStock, rolled)
-		if matches > bestRollMatches then
-			bestRollMatches = matches
-			bestRollSeedAdd = seedAdd
-		end
-	end
-	predictRollSeedAdd[shopName] = bestRollSeedAdd
-	predictShopCalibrated[shopName] = true
-	end)
-	if not ok then
-		warn("[Predict] calibrate failed for", shopName, err)
-	end
-end
-
-predictShopStockAt = function(shopName, unix)
-	loadPredictCommunitySchedules()
-	local scheduled = predictStockFromCommunity(shopName, unix, predictShopOffsets[shopName])
-	if scheduled then
-		return filterPredictStockByWorld(scheduled, shopName), "schedule"
-	end
-	local rolled = predictStockFromRoll(shopName, unix)
-	if rolled then
-		return filterPredictStockByWorld(rolled, shopName), "roll"
-	end
-	return nil, "unknown"
-end
-
-local function formatPredictStockLines(stockMap, emptyText)
-	local names = {}
-	for itemName in stockMap do
-		table.insert(names, itemName)
-	end
-	table.sort(names)
-	if #names == 0 then
-		return predictWhite(emptyText or "Nothing in stock.")
-	end
-	local lines = {}
-	for _, itemName in names do
-		table.insert(lines, string.format('%s x%s', predictWhite(itemName), predictWhite(stockMap[itemName])))
-	end
-	return table.concat(lines, "\n")
-end
-
-local function buildPredictNextStockText(shopName, title)
-	local stockValues = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-	local shopFolder = stockValues and stockValues:FindFirstChild(shopName)
-	if not shopFolder then
-		return predictWhite("Prediction unavailable.")
-	end
-	if not predictShopCalibrated[shopName] then
-		task.defer(calibratePredictShopOffset, shopName)
-	end
-	local nextRestock = shopFolder:FindFirstChild("UnixNextRestock")
-	if not nextRestock then
-		return predictWhite("Prediction unavailable.")
-	end
-	local now = DateTime.now().UnixTimestamp
-	local okPredict, predictedStock, source = pcall(predictShopStockAt, shopName, nextRestock.Value)
-	if not okPredict then
-		warn("[Predict] stock lookup failed for", shopName, predictedStock)
-		return predictWhite("Prediction unavailable.")
-	end
-	local header = table.concat({
-		predictLabel("Restock in", formatPredictCountdown(nextRestock.Value - now)),
-		predictLabel("At", formatPredictClock(nextRestock.Value)),
-	}, "\n")
-	if predictedStock then
-		return header .. "\n" .. formatPredictStockLines(predictedStock, "Empty restock.")
-	end
-	return header .. "\n" .. predictWhite("Could not load stock schedule.")
-end
-
-hubStore = hubStore or {}
-hubStore.buildPredictMoonText = buildPredictMoonText
-hubStore.buildPredictNextStockText = buildPredictNextStockText
-
-task.spawn(function()
-	local stockValues = game:GetService("ReplicatedStorage"):WaitForChild("StockValues", 30)
-	if not stockValues then
-		return
-	end
-	for _, shopName in {"SeedShop", "GearShop", "CrateShop"} do
-		local shopFolder = stockValues:WaitForChild(shopName, 10)
-		local lastRestock = shopFolder and shopFolder:WaitForChild("UnixLastRestock", 10)
-		if lastRestock then
-			task.defer(function()
-				calibratePredictShopOffset(shopName)
-			end)
-			lastRestock.Changed:Connect(function()
-				task.defer(function()
-					calibratePredictShopOffset(shopName)
-				end)
-			end)
-		end
-	end
-end)
-
-hub:CreateTab("Predict", "rbxassetid://16000149927")
-;(function()
-	local predictWidgets = {}
-	local predictThread = nil
-	local predictUpdaters = {
-		moons = function()
-			local buildMoonText = hubStore.buildPredictMoonText or buildPredictMoonText
-			return buildMoonText(), "Moon Events (24h)"
-		end,
-		seedNext = function()
-			local buildNextStockText = hubStore.buildPredictNextStockText or buildPredictNextStockText
-			return buildNextStockText("SeedShop", "Seeds"), "Next Seed Restock"
-		end,
-		gearNext = function()
-			local buildNextStockText = hubStore.buildPredictNextStockText or buildPredictNextStockText
-			return buildNextStockText("GearShop", "Gear"), "Next Gear Restock"
-		end,
-		crateNext = function()
-			local buildNextStockText = hubStore.buildPredictNextStockText or buildPredictNextStockText
-			return buildNextStockText("CrateShop", "Crates"), "Next Crate Restock"
-		end,
-	}
-
-	local function refreshPredictWidget(key)
-		local widget = predictWidgets[key]
-		local updater = predictUpdaters[key]
-		if not widget or not updater then
-			return
-		end
-		local ok, resultContent, resultTitle = pcall(updater)
-		if ok then
-			setHubParagraph(widget, resultContent, resultTitle)
-		else
-			warn("[Predict] update failed for", key, resultContent)
-			setHubParagraph(widget, "Update error.", resultTitle or key)
-		end
-	end
-
-	local function startPredictLoop()
-		if predictThread then
-			return
-		end
-		predictThread = task.spawn(function()
-			while next(predictWidgets) do
-				for key in pairs(predictUpdaters) do
-					refreshPredictWidget(key)
-				end
-				task.wait(1)
-			end
-			predictThread = nil
-		end)
-	end
-
-	local function bindPredictParagraph(key, widget)
-		if not widget then
-			warn("[Predict] missing widget for", key)
-			return
-		end
-		if predictWidgets[key] then
-			return
-		end
-		predictWidgets[key] = widget
-		enableParagraphRichText(widget)
-		refreshPredictWidget(key)
-	end
-
-	hub:CreateModule("Predict", {
-		name = "Live Predictions",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		callback = function() end,
-		opts = {
-			{type = "paragraph", title = "Moon Events (24h)", content = "Loading...", onCreate = function(widget)
-				bindPredictParagraph("moons", widget)
-			end},
-			{type = "paragraph", title = "Next Seed Restock", content = "Loading...", onCreate = function(widget)
-				bindPredictParagraph("seedNext", widget)
-			end},
-			{type = "paragraph", title = "Next Gear Restock", content = "Loading...", onCreate = function(widget)
-				bindPredictParagraph("gearNext", widget)
-			end},
-			{type = "paragraph", title = "Next Crate Restock", content = "Loading...", onCreate = function(widget)
-				bindPredictParagraph("crateNext", widget)
-			end},
-		}
-	})
-	table.insert(hubStore.paragraphBootstraps, function()
-		for key in pairs(predictUpdaters) do
-			refreshPredictWidget(key)
-		end
-		startPredictLoop()
-	end)
-end)()
-hub:CreateTab("Misc", "rbxassetid://10885640682")
-local instantPromptsEnabled = false
-hub:CreateModule("Misc", {
-	name = "Instant Prompts",
-	beta = false,
-	on = false,
-	bind = "None",
-	desc = "Instant prompts.",
-	callback = function(enabled)
-		instantPromptsEnabled = enabled
-		if enabled then
-			for _, prompt in workspace:GetDescendants() do
-				if prompt:IsA("ProximityPrompt") then
-					prompt.HoldDuration = 0
-				end
-			end
-		end
-	end,
-	opts = {}
-})
-espftype = "Blacklist"
-espflist = ""
-espmuttype = "Whitelist"
-espmutlist = ""
-espshowothers = false
-espmaxdist = 300
-;(function()
-local function espallowed(seedName)
-	local set = {}
-	for name in (espflist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if espflist == "" or espflist == "None" then
-		if espftype == "Whitelist" then
-			return false
-		else
-			return true
-		end
-	end
-	if espftype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-local function espmutallowed(mutation)
-	if not mutation or mutation == "" then
-		mutation = "None"
-	end
-	local set = {}
-	for name in (espmutlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if espmutlist == "" or espmutlist == "None" or set["None"] then
-		return true
-	end
-	if espmuttype == "Whitelist" then
-		return set[mutation] == true
-	end
-	return set[mutation] == nil
-end
-esprunning = false
-espminweight = 0
-espmaxweight = 0
-espshowbeam = false
-espBills = {}
-espBeams = {}
-espThread = nil
-local function updateESP()
-	local function formatNumber(n)
-		if n >= 1000000000000 then
-			return string.format("%.2fT", n / 1000000000000):gsub("%.?0+([T])$", "%1")
-		elseif n >= 1000000000 then
-			return string.format("%.2fB", n / 1000000000):gsub("%.?0+([B])$", "%1")
-		elseif n >= 1000000 then
-			return string.format("%.2fM", n / 1000000):gsub("%.?0+([M])$", "%1")
-		elseif n >= 1000 then
-			return string.format("%.2fK", n / 1000):gsub("%.?0+([K])$", "%1")
-		end
-		local rounded = math.floor(n * 10 + 0.5) / 10
-		return (string.format("%.1f", rounded):gsub("%.0$", ""))
-	end
-	if not esprunning then
-		for _, bill in pairs(espBills) do
-			pcall(function() bill:Destroy() end)
-		end
-		table.clear(espBills)
-		clearEspBeamTable(espBeams)
-		return
-	end
-	local gardens = workspace:FindFirstChild("Gardens")
-	if not gardens then return end
-	local currentBills = {}
-	local currentBeams = {}
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	local function processInstance(obj, plant)
-		plant = plant or ((obj.Parent and obj.Parent.Name == "Fruits") and obj.Parent.Parent) or obj
-		local seedName = getseedname(obj)
-		if not seedName or seedName == "" then return end
-		local cropName = getcropname(seedName) or seedName
-		local mutation = obj:GetAttribute("Mutation") or "None"
-		if not espallowed(cropName) or not espmutallowed(mutation) then return end
-		local hp = obj:FindFirstChild("HarvestPart") or obj:FindFirstChildWhichIsA("BasePart") or (obj:IsA("BasePart") and obj) or (obj:IsA("Model") and obj.PrimaryPart)
-		if not hp then return end
-		local character = localPlayer.Character
-		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			local dist = (hp.Position - rootPart.Position).Magnitude
-			if dist > espmaxdist then return end
-		end
-		if obj.Parent and obj.Parent.Name == "Fruits" and tonumber(obj.Name) then
-			return
-		end
-		local baseWeight = getbaseweight(seedName)
-		if not baseWeight then
-				baseWeight = 1
-		end
-		local sizeMulti = obj:GetAttribute("SizeMulti") or obj:GetAttribute("SizeMultiplier")
-		if not sizeMulti then
-			local attrWeight = obj:GetAttribute("Weight")
-			if attrWeight then
-				if baseWeight > 50 then
-					sizeMulti = attrWeight / baseWeight
-				else
-					sizeMulti = (attrWeight / 1000) / baseWeight
-				end
-			end
-		end
-		if not sizeMulti then
-			local isFruit = (obj.Parent and obj.Parent.Name == "Fruits")
-			local lastGen
-			if isFruit then
-				lastGen = obj:GetAttribute("LastGenerated") or obj:GetAttribute("PlantedAt")
-			else
-				lastGen = obj:GetAttribute("PlantedAt") or obj:GetAttribute("LastGenerated")
-			end
-			local psm = getPlantSizeMultipliers()
-			if lastGen and psm and typeof(psm) == "table" then
-				local ok, res
-				if isFruit and typeof(psm.GetRandomFruitSize) == "function" then
-					ok, res = pcall(function() return psm.GetRandomFruitSize(1, lastGen) end)
-				elseif typeof(psm.GetRandomPlantSize) == "function" then
-					local stage = obj:GetAttribute("Age") or obj:GetAttribute("MaxAge") or 1
-					ok, res = pcall(function() return psm.GetRandomPlantSize(stage, lastGen, seedName) end)
-				end
-				if ok and res then
-					sizeMulti = res
-				end
-			end
-		end
-		if not sizeMulti then sizeMulti = 1 end
-		local decay = tonumber(obj:GetAttribute("DecayAlpha")) or 0
-		local value = estimateGardenObjectPrice(obj, plant)
-		local calcWeightKg = getweightkg(obj, seedName)
-		local wf = getWeightFormat()
-		local weightStr = ""
-		if wf and typeof(wf) == "table" and typeof(wf.FormatGrams) == "function" then
-			local ok, formatted = pcall(wf.FormatGrams, calcWeightKg)
-			if ok and formatted then
-				weightStr = formatted
-			else
-				weightStr = string.format("%.2fkg", calcWeightKg)
-			end
-		else
-			weightStr = string.format("%.2fkg", calcWeightKg)
-		end
-		local matchesMin = (espminweight == 0 or calcWeightKg >= espminweight)
-		local matchesMax = (espmaxweight == 0 or calcWeightKg <= espmaxweight)
-		if not (matchesMin and matchesMax) then
-			return
-		end
-		local bb = hp:FindFirstChild("FruitESP")
-		if not bb then
-			bb = Instance.new("BillboardGui")
-			bb.Name = "FruitESP"
-			bb.Size = UDim2.new(0, 320, 0, 30)
-			bb.StudsOffset = Vector3.new(0, 2.5, 0)
-			bb.AlwaysOnTop = true
-			bb.Adornee = hp
-			bb.Parent = hp
-			local container = Instance.new("Frame")
-			container.Name = "Container"
-			container.Size = UDim2.new(0, 0, 1, 0)
-			container.AutomaticSize = Enum.AutomaticSize.X
-			container.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-			container.BorderSizePixel = 0
-			container.AnchorPoint = Vector2.new(0.5, 0.5)
-			container.Position = UDim2.new(0.5, 0, 0.5, 0)
-			container.Parent = bb
-			rnd(container, 15)
-			stk(container, Color3.fromRGB(30, 30, 35), 1)
-			pad(container, 6, 6, 12, 12)
-			local lay = Instance.new("UIListLayout")
-			lay.FillDirection = Enum.FillDirection.Horizontal
-			lay.VerticalAlignment = Enum.VerticalAlignment.Center
-			lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			lay.Padding = UDim.new(0, 8)
-			lay.Parent = container
-		end
-		currentBills[bb] = true
-		espBills[bb] = bb
-		local container = bb:FindFirstChild("Container")
-		if container then
-			local nameLbl = container:FindFirstChild("NameLbl")
-			if nameLbl then
-			else
-				container:ClearAllChildren()
-				rnd(container, 15)
-				stk(container, Color3.fromRGB(30, 30, 35), 1)
-				pad(container, 6, 6, 12, 12)
-				local lay = Instance.new("UIListLayout")
-				lay.FillDirection = Enum.FillDirection.Horizontal
-				lay.VerticalAlignment = Enum.VerticalAlignment.Center
-				lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-				lay.Padding = UDim.new(0, 8)
-				lay.Parent = container
-				local iconUrl = fruitIcons and fruitIcons[seedName]
-				if iconUrl and getFruitAsset then
-					local img = Instance.new("ImageLabel")
-					img.Size = UDim2.new(0, 18, 0, 18)
-					img.BackgroundTransparency = 1
-					img.ScaleType = Enum.ScaleType.Fit
-					img.Parent = container
-					getFruitAsset(seedName, iconUrl, img)
-				end
-				local function createLabel(text, color)
-					local lbl = Instance.new("TextLabel")
-					lbl.BackgroundTransparency = 1
-					lbl.Text = text
-					lbl.TextColor3 = color
-					lbl.TextSize = 10
-					lbl.Font = Enum.Font.MontserratBold
-					lbl.Size = UDim2.new(0, 0, 1, 0)
-					lbl.AutomaticSize = Enum.AutomaticSize.X
-					lbl.Parent = container
-					return lbl
-				end
-				local nameLbl = createLabel(seedName, Color3.fromRGB(255, 255, 255))
-				nameLbl.Name = "NameLbl"
-				if mutation ~= "None" then
-					local mutCol = Color3.fromRGB(255, 195, 55)
-					local useGrad = false
-					local gradColors = nil
-					local animateGrad = false
-					local animSpeed = 0.3
-					if mutation == "Rainbow" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-							ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 255, 0)),
-							ColorSequenceKeypoint.new(0.4, Color3.fromRGB(0, 255, 0)),
-							ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 255)),
-							ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255))
-						}
-						animateGrad = true
-						animSpeed = 0.4
-					elseif mutation == "Gold" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 215, 0)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 245, 150)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 215, 0))
-						}
-						animateGrad = true
-						animSpeed = 0.3
-					elseif mutation == "Blood" or mutation == "Bloodlit" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 0, 0)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
-						}
-					elseif mutation == "Frozen" then
-						mutCol = Color3.fromRGB(0, 240, 255)
-					elseif mutation == "Dark" then
-						mutCol = Color3.fromRGB(100, 100, 120)
-					elseif mutation == "Light" then
-						mutCol = Color3.fromRGB(240, 240, 255)
-					elseif mutation == "Glitch" then
-						mutCol = Color3.fromRGB(0, 255, 150)
-					elseif mutation == "Giant" then
-						mutCol = Color3.fromRGB(255, 100, 100)
-					elseif mutation == "Electric" then
-						mutCol = Color3.fromRGB(0, 0, 0)
-					elseif mutation == "Starstruck" then
-						mutCol = Color3.fromRGB(255, 255, 0)
-					elseif mutation == "Aurora" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 170)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 150, 255)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 80, 255))
-						}
-					elseif mutation == "Ignited" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 120, 0)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 190, 0))
-						}
-					end
-					local mutLbl = createLabel("[" .. mutation .. "]", mutCol)
-					if mutation == "Electric" then
-						local stroke = Instance.new("UIStroke")
-						stroke.Color = Color3.fromRGB(255, 255, 255)
-						stroke.Thickness = 1
-						stroke.Parent = mutLbl
-					end
-					if useGrad and gradColors then
-						local grad = Instance.new("UIGradient")
-						grad.Color = ColorSequence.new(gradColors)
-						grad.Parent = mutLbl
-						if animateGrad then
-							task.spawn(function()
-								while mutLbl and mutLbl.Parent do
-									local t = (os.clock() * animSpeed) % 1
-									grad.Offset = Vector2.new(-t * 2 + 1, 0)
-									task.wait()
-								end
-							end)
-						end
-					end
-				end
-				createLabel(weightStr, Color3.fromRGB(130, 130, 140))
-				local priceTag = container:FindFirstChild("PriceTag")
-				if value > 0 then
-					if not priceTag then
-						priceTag = Instance.new("Frame")
-						priceTag.Name = "PriceTag"
-						priceTag.Size = UDim2.new(0, 0, 1, 0)
-						priceTag.AutomaticSize = Enum.AutomaticSize.X
-						priceTag.BackgroundTransparency = 1
-						priceTag.Parent = container
-						local priceLay = Instance.new("UIListLayout")
-						priceLay.FillDirection = Enum.FillDirection.Horizontal
-						priceLay.VerticalAlignment = Enum.VerticalAlignment.Center
-						priceLay.Padding = UDim.new(0, 4)
-						priceLay.Parent = priceTag
-						local coinImg = Instance.new("ImageLabel")
-						coinImg.Name = "CoinImg"
-						coinImg.Size = UDim2.new(0, 11, 0, 11)
-						coinImg.BackgroundTransparency = 1
-						coinImg.ScaleType = Enum.ScaleType.Fit
-						coinImg.Parent = priceTag
-						getFruitAsset("SheckleCoin", nil, coinImg)
-						local priceLbl = Instance.new("TextLabel")
-						priceLbl.Name = "PriceLbl"
-						priceLbl.BackgroundTransparency = 1
-						priceLbl.Text = formatNumber(value)
-						priceLbl.TextColor3 = Color3.fromRGB(80, 220, 100)
-						priceLbl.TextSize = 10
-						priceLbl.Font = Enum.Font.MontserratBold
-						priceLbl.Size = UDim2.new(0, 0, 1, 0)
-						priceLbl.AutomaticSize = Enum.AutomaticSize.X
-						priceLbl.Parent = priceTag
-					else
-						local priceLbl = priceTag:FindFirstChild("PriceLbl")
-						if priceLbl then
-							priceLbl.Text = formatNumber(value)
-						end
-					end
-				else
-					if priceTag then
-						priceTag:Destroy()
-					end
-				end
-			end
-		end
-		if espshowbeam and rootPart and hp then
-			ensureEspBeam(espBeams, "FruitESP_" .. hp:GetFullName(), true, rootPart, hp, Color3.fromRGB(80, 220, 120), currentBeams)
-		end
-	end
-	for _, plot in gardens:GetChildren() do
-		local owner = plot:GetAttribute("Owner")
-		local ownerid = plot:GetAttribute("OwnerUserId")
-		local isMyPlot = (owner == localPlayer.Name or owner == localPlayer.DisplayName) or (ownerid == localPlayer.UserId)
-		if not isMyPlot and not espshowothers then
-			continue
-		end
-		local plants = plot:FindFirstChild("Plants")
-		if plants then
-			for _, plant in plants:GetChildren() do
-				local fruits = plant:FindFirstChild("Fruits")
-				if fruits then
-					for _, fruit in fruits:GetChildren() do
-						processInstance(fruit, plant)
-					end
-				else
-					processInstance(plant, plant)
-				end
-			end
-		end
-	end
-	for bill, _ in pairs(espBills) do
-		if not currentBills[bill] then
-			pcall(function() bill:Destroy() end)
-			espBills[bill] = nil
-		end
-	end
-	syncEspBeamTable(espBeams, currentBeams)
-end
-function toggleESP(val)
-	esprunning = val
-	if val then
-		espThread = task.spawn(function()
-			while esprunning do
-				updateESP()
-				task.wait(2)
-			end
-		end)
-	else
-		if espThread then
-			task.cancel(espThread)
-			espThread = nil
-		end
-		updateESP()
-	end
-end
-plantEsprunning = false
-plantEspminweight = 0
-plantEspmaxweight = 0
-plantEspmaxdist = 300
-plantEspshowothers = false
-plantEspshowbeam = false
-plantEspftype = "Blacklist"
-plantEspflist = ""
-plantEspmuttype = "Whitelist"
-plantEspmutlist = ""
-plantEspBills = {}
-plantEspBeams = {}
-plantEspThread = nil
-local function plantEspallowed(seedName)
-	local set = {}
-	for name in (plantEspflist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if plantEspflist == "" or plantEspflist == "None" then
-		if plantEspftype == "Whitelist" then
-			return false
-		else
-			return true
-		end
-	end
-	if plantEspftype == "Whitelist" then
-		return set[seedName] == true
-	end
-	return set[seedName] == nil
-end
-local function plantEspmutallowed(mutation)
-	if not mutation or mutation == "" then
-		mutation = "None"
-	end
-	local set = {}
-	for name in (plantEspmutlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if plantEspmutlist == "" or plantEspmutlist == "None" then
-		return true
-	end
-	if plantEspmuttype == "Whitelist" then
-		return set[mutation] == true
-	end
-	return set[mutation] == nil
-end
-local function getPlantBboxTopWorld(plant)
-	if not plant then
-		return nil
-	end
-	local excludedFolders = { Fruits = true, FruitSpawnLocations = true }
-	local minY, maxY = math.huge, -math.huge
-	for _, part in plant:QueryDescendants("BasePart") do
-		local parent = part.Parent
-		local skip = false
-		while parent and parent ~= plant do
-			if excludedFolders[parent.Name] then
-				skip = true
-				break
-			end
-			parent = parent.Parent
-		end
-		if not skip then
-			local cf = part.CFrame
-			local topY = (cf * CFrame.new(0, part.Size.Y / 2, 0)).Position.Y
-			local bottomY = (cf * CFrame.new(0, -part.Size.Y / 2, 0)).Position.Y
-			if topY > maxY then
-				maxY = topY
-			end
-			if bottomY < minY then
-				minY = bottomY
-			end
-		end
-	end
-	if maxY == -math.huge then
-		return nil
-	end
-	local anchor = plant.PrimaryPart or plant:FindFirstChild("Base") or plant:FindFirstChildWhichIsA("BasePart")
-	local pivot = anchor and anchor.Position or plant:GetPivot().Position
-	return Vector3.new(pivot.X, maxY + 2, pivot.Z)
-end
-
-local function getPlantEspAdornee(plant)
-	if not plant then
-		return nil
-	end
-	if isSingleHarvestGardenObject(plant, plant) then
-		return plant.PrimaryPart or plant:FindFirstChild("Base") or plant:FindFirstChildWhichIsA("BasePart")
-	end
-	return plant:FindFirstChild("HarvestPart") or plant.PrimaryPart or plant:FindFirstChild("Base") or plant:FindFirstChildWhichIsA("BasePart")
-end
-
-local function applyPlantEspBillboardPlacement(bb, plant, anchor)
-	if not bb or not anchor then
-		return
-	end
-	if bb.Parent ~= anchor then
-		bb.Parent = anchor
-	end
-	bb.Adornee = anchor
-	if isSingleHarvestGardenObject(plant, plant) then
-		local topWorld = getPlantBboxTopWorld(plant)
-		if topWorld then
-			bb.StudsOffset = Vector3.zero
-			bb.ExtentsOffsetWorldSpace = topWorld - anchor.Position
-			return
-		end
-	end
-	bb.ExtentsOffsetWorldSpace = Vector3.zero
-	bb.StudsOffset = Vector3.new(0, 3.5, 0)
-end
-
-local function findPlantEspBillboard(plant, anchor)
-	local bb = anchor and anchor:FindFirstChild("PlantESP")
-	if bb then
-		return bb
-	end
-	for _, desc in plant:GetDescendants() do
-		if desc:IsA("BillboardGui") and desc.Name == "PlantESP" then
-			return desc
-		end
-	end
-	return nil
-end
-
-local function updatePlantESP()
-	if not plantEsprunning then
-		for _, bill in pairs(plantEspBills) do
-			pcall(function() bill:Destroy() end)
-		end
-		table.clear(plantEspBills)
-		clearEspBeamTable(plantEspBeams)
-		return
-	end
-	local gardens = workspace:FindFirstChild("Gardens")
-	if not gardens then return end
-	local currentBills = {}
-	local currentBeams = {}
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	local function processPlant(obj)
-		local seedName = getseedname(obj)
-		if not seedName or seedName == "" then return end
-		local cropName = getcropname(seedName) or seedName
-		local mutation = obj:GetAttribute("Mutation") or "None"
-		if not plantEspallowed(cropName) or not plantEspmutallowed(mutation) then return end
-		local hp = getPlantEspAdornee(obj)
-		if not hp then return end
-		local character = localPlayer.Character
-		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			local dist = (hp.Position - rootPart.Position).Magnitude
-			if dist > plantEspmaxdist then return end
-		end
-		local sizeMulti = obj:GetAttribute("SizeMulti") or obj:GetAttribute("SizeMultiplier")
-		if not sizeMulti then
-			local lastGen = obj:GetAttribute("PlantedAt") or obj:GetAttribute("LastGenerated")
-			local psm = getPlantSizeMultipliers()
-			if lastGen and psm and typeof(psm) == "table" and typeof(psm.GetRandomPlantSize) == "function" then
-				local stage = obj:GetAttribute("Age") or obj:GetAttribute("MaxAge") or 1
-				local ok, res = pcall(function() return psm.GetRandomPlantSize(stage, lastGen, seedName) end)
-				if ok and res then
-					sizeMulti = res
-				end
-			end
-		end
-		if not sizeMulti then sizeMulti = 1 end
-		local baseWeight = getbaseweight(seedName) or 1
-		local calcWeightKg = getweightkg(obj, seedName)
-		local wf = getWeightFormat()
-		local weightStr = ""
-		if wf and typeof(wf) == "table" and typeof(wf.FormatGrams) == "function" then
-			local ok, formatted = pcall(wf.FormatGrams, calcWeightKg)
-			if ok and formatted then
-				weightStr = formatted
-			else
-				weightStr = string.format("%.2fkg", calcWeightKg)
-			end
-		else
-			weightStr = string.format("%.2fkg", calcWeightKg)
-		end
-		local matchesMin = (plantEspminweight == 0 or calcWeightKg >= plantEspminweight)
-		local matchesMax = (plantEspmaxweight == 0 or calcWeightKg <= plantEspmaxweight)
-		if not (matchesMin and matchesMax) then
-			return
-		end
-		local bb = findPlantEspBillboard(obj, hp)
-		if not bb then
-			bb = Instance.new("BillboardGui")
-			bb.Name = "PlantESP"
-			bb.Size = UDim2.new(0, 320, 0, 30)
-			bb.AlwaysOnTop = true
-			bb.Parent = hp
-			local container = Instance.new("Frame")
-			container.Name = "Container"
-			container.Size = UDim2.new(0, 0, 1, 0)
-			container.AutomaticSize = Enum.AutomaticSize.X
-			container.BackgroundColor3 = Color3.fromRGB(15, 20, 15)
-			container.BorderSizePixel = 0
-			container.AnchorPoint = Vector2.new(0.5, 0.5)
-			container.Position = UDim2.new(0.5, 0, 0.5, 0)
-			container.Parent = bb
-			rnd(container, 15)
-			stk(container, Color3.fromRGB(30, 35, 30), 1)
-			pad(container, 6, 6, 12, 12)
-			local lay = Instance.new("UIListLayout")
-			lay.FillDirection = Enum.FillDirection.Horizontal
-			lay.VerticalAlignment = Enum.VerticalAlignment.Center
-			lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			lay.Padding = UDim.new(0, 8)
-			lay.Parent = container
-		end
-		applyPlantEspBillboardPlacement(bb, obj, hp)
-		currentBills[bb] = true
-		plantEspBills[bb] = bb
-		local container = bb:FindFirstChild("Container")
-		if container then
-			local nameLbl = container:FindFirstChild("NameLbl")
-			local heightFt = getPlantHeightFt(obj)
-			local heightText = formatPlantHeightText(heightFt)
-			if nameLbl then
-				if heightText then
-					local heightLbl = container:FindFirstChild("HeightLbl")
-					if heightLbl then
-						heightLbl.Text = heightText
-					else
-						heightLbl = Instance.new("TextLabel")
-						heightLbl.Name = "HeightLbl"
-						heightLbl.BackgroundTransparency = 1
-						heightLbl.Text = heightText
-						heightLbl.TextColor3 = Color3.fromRGB(100, 200, 255)
-						heightLbl.TextSize = 10
-						heightLbl.Font = Enum.Font.MontserratBold
-						heightLbl.Size = UDim2.new(0, 0, 1, 0)
-						heightLbl.AutomaticSize = Enum.AutomaticSize.X
-						heightLbl.Parent = container
-					end
-				end
-			else
-				container:ClearAllChildren()
-				rnd(container, 15)
-				stk(container, Color3.fromRGB(30, 35, 30), 1)
-				pad(container, 6, 6, 12, 12)
-				local lay = Instance.new("UIListLayout")
-				lay.FillDirection = Enum.FillDirection.Horizontal
-				lay.VerticalAlignment = Enum.VerticalAlignment.Center
-				lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-				lay.Padding = UDim.new(0, 8)
-				lay.Parent = container
-				local iconUrl = fruitIcons and fruitIcons[seedName]
-				if iconUrl and getFruitAsset then
-					local img = Instance.new("ImageLabel")
-					img.Size = UDim2.new(0, 18, 0, 18)
-					img.BackgroundTransparency = 1
-					img.ScaleType = Enum.ScaleType.Fit
-					img.Parent = container
-					getFruitAsset(seedName, iconUrl, img)
-				end
-				local function createLabel(text, color)
-					local lbl = Instance.new("TextLabel")
-					lbl.BackgroundTransparency = 1
-					lbl.Text = text
-					lbl.TextColor3 = color
-					lbl.TextSize = 10
-					lbl.Font = Enum.Font.MontserratBold
-					lbl.Size = UDim2.new(0, 0, 1, 0)
-					lbl.AutomaticSize = Enum.AutomaticSize.X
-					lbl.Parent = container
-					return lbl
-				end
-				local nameLbl = createLabel(seedName:gsub("%s*%b[]%s*$", ""), Color3.fromRGB(255, 255, 255))
-				nameLbl.Name = "NameLbl"
-				if mutation ~= "None" then
-					local mutCol = Color3.fromRGB(255, 195, 55)
-					local useGrad = false
-					local gradColors = nil
-					local animateGrad = false
-					local animSpeed = 0.3
-					if mutation == "Rainbow" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-							ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 255, 0)),
-							ColorSequenceKeypoint.new(0.4, Color3.fromRGB(0, 255, 0)),
-							ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 255)),
-							ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255))
-						}
-						animateGrad = true
-						animSpeed = 0.4
-					elseif mutation == "Gold" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 215, 0)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 245, 150)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 215, 0))
-						}
-						animateGrad = true
-						animSpeed = 0.3
-					elseif mutation == "Blood" or mutation == "Bloodlit" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 0, 0)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
-						}
-					elseif mutation == "Frozen" then
-						mutCol = Color3.fromRGB(0, 240, 255)
-					elseif mutation == "Dark" then
-						mutCol = Color3.fromRGB(100, 100, 120)
-					elseif mutation == "Light" then
-						mutCol = Color3.fromRGB(240, 240, 255)
-					elseif mutation == "Glitch" then
-						mutCol = Color3.fromRGB(0, 255, 150)
-					elseif mutation == "Giant" then
-						mutCol = Color3.fromRGB(255, 100, 100)
-					elseif mutation == "Electric" then
-						mutCol = Color3.fromRGB(0, 0, 0)
-					elseif mutation == "Starstruck" then
-						mutCol = Color3.fromRGB(255, 255, 0)
-					elseif mutation == "Aurora" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 170)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 150, 255)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 80, 255))
-						}
-					elseif mutation == "Ignited" then
-						mutCol = Color3.fromRGB(255, 255, 255)
-						useGrad = true
-						gradColors = {
-							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 120, 0)),
-							ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 190, 0))
-						}
-					end
-					local mutLbl = createLabel("[" .. mutation .. "]", mutCol)
-					if mutation == "Electric" then
-						local stroke = Instance.new("UIStroke")
-						stroke.Color = Color3.fromRGB(255, 255, 255)
-						stroke.Thickness = 1
-						stroke.Parent = mutLbl
-					end
-					if useGrad and gradColors then
-						local grad = Instance.new("UIGradient")
-						grad.Color = ColorSequence.new(gradColors)
-						grad.Parent = mutLbl
-						if animateGrad then
-							task.spawn(function()
-								while mutLbl and mutLbl.Parent do
-									local t = (os.clock() * animSpeed) % 1
-									grad.Offset = Vector2.new(-t * 2 + 1, 0)
-									task.wait()
-								end
-							end)
-						end
-					end
-				end
-				local heightText = formatPlantHeightText(getPlantHeightFt(obj))
-				if heightText then
-					local heightLbl = createLabel(heightText, Color3.fromRGB(100, 200, 255))
-					heightLbl.Name = "HeightLbl"
-				end
-			end
-		end
-		if plantEspshowbeam and rootPart and hp then
-			ensureEspBeam(plantEspBeams, "PlantESP_" .. hp:GetFullName(), true, rootPart, hp, Color3.fromRGB(100, 200, 255), currentBeams)
-		end
-	end
-	for _, plot in gardens:GetChildren() do
-		local owner = plot:GetAttribute("Owner")
-		local ownerid = plot:GetAttribute("OwnerUserId")
-		local isMyPlot = (owner == localPlayer.Name or owner == localPlayer.DisplayName) or (ownerid == localPlayer.UserId)
-		if not isMyPlot and not plantEspshowothers then
-			continue
-		end
-		local plants = plot:FindFirstChild("Plants")
-		if plants then
-			for _, plant in plants:GetChildren() do
-				processPlant(plant)
-			end
-		end
-	end
-	for bill, _ in pairs(plantEspBills) do
-		if not currentBills[bill] then
-			pcall(function() bill:Destroy() end)
-			plantEspBills[bill] = nil
-		end
-	end
-	syncEspBeamTable(plantEspBeams, currentBeams)
-end
-function togglePlantESP(val)
-	plantEsprunning = val
-	if val then
-		plantEspThread = task.spawn(function()
-			while plantEsprunning do
-				updatePlantESP()
-				task.wait(2)
-			end
-		end)
-	else
-		if plantEspThread then
-			task.cancel(plantEspThread)
-			plantEspThread = nil
-		end
-		updatePlantESP()
-	end
-end
-
-gardenEsprunning = false
-gardenEspshowpath = false
-gardenEspmaxdist = 1000
-gardenEspBills = {}
-gardenEspBeams = {}
-gardenEspThread = nil
-
-local function updateGardenESP()
-	if not gardenEsprunning then
-		for _, bill in pairs(gardenEspBills) do
-			pcall(function() bill:Destroy() end)
-		end
-		table.clear(gardenEspBills)
-		clearEspBeamTable(gardenEspBeams)
-		return
-	end
-	local gardens = workspace:FindFirstChild("Gardens")
-	if not gardens then return end
-	local currentBills = {}
-	local currentBeams = {}
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-
-	for _, plot in gardens:GetChildren() do
-		local owner = plot:GetAttribute("Owner") or "Empty"
-		local ownerId = plot:GetAttribute("OwnerUserId")
-		local plotId = plot.Name:match("%d+") or plot.Name
-		
-		-- Center part to attach ESP/Beam to
-		local targetPart = plot:FindFirstChild("SpawnPoint") or plot:FindFirstChild("PlotSizeReference") or plot:FindFirstChildWhichIsA("BasePart", true)
-		if targetPart and rootPart then
-			local dist = (targetPart.Position - rootPart.Position).Magnitude
-			if dist <= gardenEspmaxdist then
-				-- 1. Billboard ESP
-				local bb = targetPart:FindFirstChild("GardenESP")
-				if not bb then
-					bb = Instance.new("BillboardGui")
-					bb.Name = "GardenESP"
-					bb.Size = UDim2.new(0, 280, 0, 30)
-					bb.StudsOffset = Vector3.new(0, 5, 0)
-					bb.AlwaysOnTop = true
-					bb.Adornee = targetPart
-					bb.Parent = targetPart
-					
-					local container = Instance.new("Frame")
-					container.Name = "Container"
-					container.Size = UDim2.new(0, 0, 1, 0)
-					container.AutomaticSize = Enum.AutomaticSize.X
-					container.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-					container.BorderSizePixel = 0
-					container.AnchorPoint = Vector2.new(0.5, 0.5)
-					container.Position = UDim2.new(0.5, 0, 0.5, 0)
-					container.Parent = bb
-					rnd(container, 15)
-					stk(container, Color3.fromRGB(35, 35, 45), 1)
-					pad(container, 6, 6, 12, 12)
-					
-					local lay = Instance.new("UIListLayout")
-					lay.FillDirection = Enum.FillDirection.Horizontal
-					lay.VerticalAlignment = Enum.VerticalAlignment.Center
-					lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-					lay.Padding = UDim.new(0, 8)
-					lay.Parent = container
-
-					local titleLbl = Instance.new("TextLabel")
-					titleLbl.Name = "TitleLbl"
-					titleLbl.BackgroundTransparency = 1
-					titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-					titleLbl.TextSize = 10
-					titleLbl.Font = Enum.Font.MontserratBold
-					titleLbl.Size = UDim2.new(0, 0, 1, 0)
-					titleLbl.AutomaticSize = Enum.AutomaticSize.X
-					titleLbl.Parent = container
-
-					local distLbl = Instance.new("TextLabel")
-					distLbl.Name = "DistLbl"
-					distLbl.BackgroundTransparency = 1
-					distLbl.TextColor3 = Color3.fromRGB(160, 160, 170)
-					distLbl.TextSize = 9
-					distLbl.Font = Enum.Font.MontserratMedium
-					distLbl.Size = UDim2.new(0, 0, 1, 0)
-					distLbl.AutomaticSize = Enum.AutomaticSize.X
-					distLbl.Parent = container
-				end
-				currentBills[bb] = true
-				gardenEspBills[bb] = bb
-				
-				local container = bb:FindFirstChild("Container")
-				if container then
-					local titleLbl = container:FindFirstChild("TitleLbl")
-					local distLbl = container:FindFirstChild("DistLbl")
-					if titleLbl then
-						titleLbl.Text = string.format("Plot %s [%s]", tostring(plotId), tostring(owner))
-					end
-					if distLbl then
-						distLbl.Text = string.format("[%d studs]", math.floor(dist))
-					end
-				end
-
-				-- 2. Draw Path (Beam)
-				if gardenEspshowpath and rootPart then
-					local beamKey = "GardenESP_" .. plot.Name
-					ensureEspBeam(gardenEspBeams, beamKey, true, rootPart, targetPart, Color3.fromRGB(120, 100, 255), currentBeams)
-				end
-			end
-		end
-	end
-
-	for bb, _ in pairs(gardenEspBills) do
-		if not currentBills[bb] then
-			pcall(function() bb:Destroy() end)
-			gardenEspBills[bb] = nil
-		end
-	end
-	syncEspBeamTable(gardenEspBeams, currentBeams)
-end
-
-local function toggleGardenESP(val)
-	gardenEsprunning = val
-	if val then
-		gardenEspThread = task.spawn(function()
-			while gardenEsprunning do
-				pcall(updateGardenESP)
-				task.wait(1.5)
-			end
-		end)
-	else
-		if gardenEspThread then
-			task.cancel(gardenEspThread)
-			gardenEspThread = nil
-		end
-		updateGardenESP()
-	end
-end
-
-playerEsprunning = false
-playerEspshowhealth = true
-playerEspshowfriends = false
-playerEsphighlight = true
-playerEspshowbeam = false
-playerEspmaxdist = 1500
-playerEspBills = {}
-playerEspBeams = {}
-playerEspHighlights = {}
-playerEspThread = nil
-
-local function updatePlayerESP()
-	if not playerEsprunning then
-		for _, bill in pairs(playerEspBills) do
-			pcall(function() bill:Destroy() end)
-		end
-		table.clear(playerEspBills)
-		clearEspBeamTable(playerEspBeams)
-		for _, hl in pairs(playerEspHighlights) do
-			pcall(function() hl:Destroy() end)
-		end
-		table.clear(playerEspHighlights)
-		return
-	end
-	local currentBills = {}
-	local currentBeams = {}
-	local currentHighlights = {}
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	
-	for _, player in game.Players:GetPlayers() do
-		if player ~= localPlayer and player.Character and player.Character:FindFirstChild("Head") then
-			local charModel = player.Character
-			local head = charModel.Head
-			local pRoot = charModel:FindFirstChild("HumanoidRootPart")
-			local hum = charModel:FindFirstChildOfClass("Humanoid")
-			if pRoot and hum then
-				local dist = rootPart and (pRoot.Position - rootPart.Position).Magnitude or 0
-				if dist <= playerEspmaxdist then
-					local isFriend = false
-					pcall(function() isFriend = localPlayer:IsFriendsWith(player.UserId) end)
-					if playerEspshowfriends and not isFriend then
-						continue
-					end
-					
-					-- 1. Billboard ESP (Small & Sleek like ESP Fruits)
-					local bb = head:FindFirstChild("PlayerESP")
-					if not bb then
-						bb = Instance.new("BillboardGui")
-						bb.Name = "PlayerESP"
-						bb.Size = UDim2.new(0, 280, 0, 24)
-						bb.StudsOffset = Vector3.new(0, 3.5, 0)
-						bb.AlwaysOnTop = true
-						bb.Adornee = head
-						bb.Parent = head
-						
-						local container = Instance.new("Frame")
-						container.Name = "Container"
-						container.Size = UDim2.new(0, 0, 1, 0)
-						container.AutomaticSize = Enum.AutomaticSize.X
-						container.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-						container.BorderSizePixel = 0
-						container.AnchorPoint = Vector2.new(0.5, 0.5)
-						container.Position = UDim2.new(0.5, 0, 0.5, 0)
-						container.Parent = bb
-						rnd(container, 8)
-						stk(container, Color3.fromRGB(35, 35, 45), 1)
-						pad(container, 4, 4, 8, 8)
-						
-						local lay = Instance.new("UIListLayout")
-						lay.FillDirection = Enum.FillDirection.Horizontal
-						lay.VerticalAlignment = Enum.VerticalAlignment.Center
-						lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-						lay.Padding = UDim.new(0, 6)
-						lay.SortOrder = Enum.SortOrder.LayoutOrder
-						lay.Parent = container
-						
-						-- Avatar headshot thumbnail icon
-						local icon = Instance.new("ImageLabel")
-						icon.Name = "Icon"
-						icon.Size = UDim2.new(0, 16, 0, 16)
-						icon.BackgroundTransparency = 1
-						icon.ScaleType = Enum.ScaleType.Fit
-						icon.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
-						icon.LayoutOrder = 1
-						icon.Parent = container
-						rnd(icon, 8)
-						
-						local nameLbl = Instance.new("TextLabel")
-						nameLbl.Name = "NameLbl"
-						nameLbl.BackgroundTransparency = 1
-						nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-						nameLbl.TextSize = 10
-						nameLbl.Font = Enum.Font.MontserratBold
-						nameLbl.Size = UDim2.new(0, 0, 1, 0)
-						nameLbl.AutomaticSize = Enum.AutomaticSize.X
-						nameLbl.LayoutOrder = 2
-						nameLbl.Parent = container
-
-						local healthLbl = Instance.new("TextLabel")
-						healthLbl.Name = "HealthLbl"
-						healthLbl.BackgroundTransparency = 1
-						healthLbl.TextColor3 = Color3.fromRGB(80, 220, 100)
-						healthLbl.TextSize = 9
-						healthLbl.Font = Enum.Font.MontserratBold
-						healthLbl.Size = UDim2.new(0, 0, 1, 0)
-						healthLbl.AutomaticSize = Enum.AutomaticSize.X
-						healthLbl.LayoutOrder = 3
-						healthLbl.Parent = container
-
-						local distLbl = Instance.new("TextLabel")
-						distLbl.Name = "DistLbl"
-						distLbl.BackgroundTransparency = 1
-						distLbl.TextColor3 = Color3.fromRGB(150, 150, 160)
-						distLbl.TextSize = 9
-						distLbl.Font = Enum.Font.MontserratMedium
-						distLbl.Size = UDim2.new(0, 0, 1, 0)
-						distLbl.AutomaticSize = Enum.AutomaticSize.X
-						distLbl.LayoutOrder = 4
-						distLbl.Parent = container
-					end
-					currentBills[bb] = true
-					playerEspBills[bb] = bb
-					
-					local container = bb:FindFirstChild("Container")
-					if container then
-						local nameLbl = container:FindFirstChild("NameLbl")
-						local healthLbl = container:FindFirstChild("HealthLbl")
-						local distLbl = container:FindFirstChild("DistLbl")
-						
-						if nameLbl then
-							local friendPrefix = isFriend and "[FRIEND] " or ""
-							nameLbl.Text = friendPrefix .. player.DisplayName
-							nameLbl.TextColor3 = isFriend and Color3.fromRGB(150, 120, 255) or Color3.fromRGB(235, 235, 240)
-						end
-						if healthLbl then
-							if playerEspshowhealth then
-								healthLbl.Visible = true
-								healthLbl.Text = string.format("[%d HP]", math.floor(hum.Health))
-								healthLbl.TextColor3 = hum.Health > 50 and Color3.fromRGB(80, 220, 100) or Color3.fromRGB(240, 100, 100)
-							else
-								healthLbl.Visible = false
-							end
-						end
-						if distLbl then
-							distLbl.Text = string.format("[%d studs]", math.floor(dist))
-						end
-					end
-
-					-- 2. Highlight (Zenith Styled Purple Glow Chams)
-					if playerEsphighlight then
-						local hl = charModel:FindFirstChild("PlayerHighlight")
-						if not hl then
-							hl = Instance.new("Highlight")
-							hl.Name = "PlayerHighlight"
-							hl.FillColor = isFriend and Color3.fromRGB(120, 100, 255) or Color3.fromRGB(180, 70, 255)
-							hl.FillTransparency = 0.8
-							hl.OutlineColor = Color3.fromRGB(200, 180, 255)
-							hl.OutlineTransparency = 0.2
-							hl.Adornee = charModel
-							hl.Parent = charModel
-						end
-						if isFriend then
-							hl.FillColor = Color3.fromRGB(120, 100, 255)
-							hl.OutlineColor = Color3.fromRGB(230, 220, 255)
-						else
-							hl.FillColor = Color3.fromRGB(180, 70, 255)
-							hl.OutlineColor = Color3.fromRGB(200, 180, 255)
-						end
-						currentHighlights[hl] = true
-						playerEspHighlights[hl] = hl
-					end
-
-					if playerEspshowbeam and rootPart and pRoot then
-						local beamColor = isFriend and Color3.fromRGB(150, 120, 255) or Color3.fromRGB(200, 100, 255)
-						ensureEspBeam(playerEspBeams, "PlayerESP_" .. player.UserId, true, rootPart, pRoot, beamColor, currentBeams)
-					end
-				end
-			end
-		end
-	end
-	
-	for bb, _ in pairs(playerEspBills) do
-		if not currentBills[bb] then
-			pcall(function() bb:Destroy() end)
-			playerEspBills[bb] = nil
-		end
-	end
-	for hl, _ in pairs(playerEspHighlights) do
-		if not currentHighlights[hl] then
-			pcall(function() hl:Destroy() end)
-			playerEspHighlights[hl] = nil
-		end
-	end
-	syncEspBeamTable(playerEspBeams, currentBeams)
-end
-
-local function togglePlayerESP(val)
-	playerEsprunning = val
-	if val then
-		playerEspThread = task.spawn(function()
-			while playerEsprunning do
-				pcall(updatePlayerESP)
-				task.wait(1.0)
-			end
-		end)
-	else
-		if playerEspThread then
-			task.cancel(playerEspThread)
-			playerEspThread = nil
-		end
-		updatePlayerESP()
-	end
-end
-
-hub:CreateModule("Visuals", {
-	name = "ESP Gardens",
-	on = false,
-	bind = "None",
-	desc = "Plot ESP.",
-	callback = function(enabled)
-		toggleGardenESP(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Show Path (Beams)", value = false, callback = function(value)
-			gardenEspshowpath = value
-			if not value then
-				clearEspBeamTable(gardenEspBeams)
-			end
-			pcall(updateGardenESP)
-		end},
-		{type = "slider", label = "Max Distance", value = 1000, min = 100, max = 5000, suffix = " studs", callback = function(value)
-			gardenEspmaxdist = value
-		end}
-	}
-})
-
-hub:CreateModule("Visuals", {
-	name = "ESP Players",
-	on = false,
-	bind = "None",
-	desc = "Player ESP.",
-	callback = function(enabled)
-		togglePlayerESP(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Show Beam", value = false, callback = function(value)
-			playerEspshowbeam = value
-			if not value then
-				clearEspBeamTable(playerEspBeams)
-			end
-			pcall(updatePlayerESP)
-		end},
-		{type = "checkbox", label = "Show Outline Highlight (Chams)", value = true, callback = function(value)
-			playerEsphighlight = value
-			pcall(updatePlayerESP)
-		end},
-		{type = "checkbox", label = "Show Health", value = true, callback = function(value)
-			playerEspshowhealth = value
-		end},
-		{type = "checkbox", label = "Show Friends Only", value = false, callback = function(value)
-			playerEspshowfriends = value
-		end},
-		{type = "slider", label = "Max Distance", value = 1500, min = 100, max = 5000, suffix = " studs", callback = function(value)
-			playerEspmaxdist = value
-		end}
-	}
-})
-
-hub:CreateModule("Visuals", {
-	name = "ESP Fruits",
-	beta = true,
-	on = false,
-	bind = "None",
-	desc = "Fruit ESP.",
-	callback = function(enabled)
-		toggleESP(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Show Beam", value = false, callback = function(value)
-			espshowbeam = value
-			if not value then
-				clearEspBeamTable(espBeams)
-			end
-			pcall(updateESP)
-		end},
-		{type = "checkbox", label = "Show Others", value = false, callback = function(value)
-			espshowothers = value
-		end},
-		{type = "slider", label = "Max Distance", value = 300, min = 50, max = 2000, suffix = " studs", callback = function(value)
-			espmaxdist = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Blacklist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			espftype = value
-		end},
-		{type = "multiselect", label = "Filter Fruits", value = "None", list = gameLists.crops, callback = function(value)
-			espflist = value
-		end},
-		{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			espmuttype = value
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			espmutlist = value
-		end},
-		{type = "textbox", label = "Min Weight Filter (kg)", value = "0", placeholder = "Enter min weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			espminweight = num or 0
-		end},
-		{type = "textbox", label = "Max Weight Filter (kg)", value = "0", placeholder = "Enter max weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			espmaxweight = num or 0
-		end},
-	}
-})
-hub:CreateModule("Visuals", {
-	name = "ESP Plants",
-	on = false,
-	bind = "None",
-	desc = "Plant ESP.",
-	callback = function(enabled)
-		togglePlantESP(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Show Beam", value = false, callback = function(value)
-			plantEspshowbeam = value
-			if not value then
-				clearEspBeamTable(plantEspBeams)
-			end
-			pcall(updatePlantESP)
-		end},
-		{type = "checkbox", label = "Show Others", value = false, callback = function(value)
-			plantEspshowothers = value
-		end},
-		{type = "slider", label = "Max Distance", value = 300, min = 50, max = 2000, suffix = " studs", callback = function(value)
-			plantEspmaxdist = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			plantEspftype = value
-		end},
-		{type = "multiselect", label = "Filter Fruits", value = "None", list = gameLists.crops, callback = function(value)
-			plantEspflist = value
-		end},
-		{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			plantEspmuttype = value
-		end},
-		{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-			plantEspmutlist = value
-		end},
-		{type = "textbox", label = "Min Weight Filter (kg)", value = "0", placeholder = "Enter min weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			plantEspminweight = num or 0
-		end},
-		{type = "textbox", label = "Max Weight Filter (kg)", value = "0", placeholder = "Enter max weight in kg...", callback = function(value)
-			local num = tonumber(value)
-			plantEspmaxweight = num or 0
-		end},
-	}
-})
-petEsprunning = false
-petEspmaxdist = 300
-petEspshowbeam = false
-petEspBills = {}
-petEspBeams = {}
-petEspThread = nil
-petEspflist = ""
-petEspftype = "Blacklist"
-petEspmutlist = ""
-petEspmuttype = "Whitelist"
-petEsprarities = ""
-local function petEspallowed(petName)
-	local set = {}
-	for name in (petEspflist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	if petEspflist == "" then
-		if petEspftype == "Whitelist" then
-			return false
-		else
-			return true
-		end
-	end
-	if petEspftype == "Whitelist" then
-		return set[petName] == true
-	end
-	return set[petName] == nil
-end
-local function petEspmutallowed(mut, size, typ)
-	if not mut or mut == "" then mut = "None" end
-	if petEspmutlist == "" then
-		return true
-	end
-	local set = {}
-	for name in (petEspmutlist .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	local isMatch = false
-	if set[mut] or (size and set[size]) or (typ and set[typ]) then
-		isMatch = true
-	end
-	if set["None"] and (mut == "None" or mut == "Normal") and (not size or size == "Normal") and (not typ or typ == "Normal") then
-		isMatch = true
-	end
-	if petEspmuttype == "Whitelist" then
-		return isMatch
-	end
-	return not isMatch
-end
-local function petEsprarityallowed(rarity)
-	if petEsprarities == "" then return true end
-	local set = {}
-	for name in (petEsprarities .. ","):gmatch("([^,]+),") do
-		set[name:match("^%s*(.-)%s*$")] = true
-	end
-	return set[rarity] == true
-end
-
-local PET_LEAVE_TIMER_ICON = "rbxassetid://101182513682775"
-
-local function formatPetLeaveTime(seconds)
-	if not seconds then
-		return nil
-	end
-	local total = math.max(0, math.ceil(seconds))
-	if total < 60 then
-		return string.format("%ds", total)
-	end
-	local minutes = math.floor(total / 60)
-	local secs = total % 60
-	if secs == 0 then
-		return string.format("%dm", minutes)
-	end
-	return string.format("%dm %ds", minutes, secs)
-end
-
-local function getWildPetLeaveTimeText(model)
-	local refPart = model.PrimaryPart or model:FindFirstChild("RootPart") or model:FindFirstChildWhichIsA("BasePart")
-	if not refPart then
-		return nil
-	end
-	if refPart:GetAttribute("NoTimer") == true then
-		return nil
-	end
-	local ownerId = refPart:GetAttribute("OwnerUserId")
-	if type(ownerId) == "number" and ownerId ~= 0 then
-		return nil
-	end
-	local spawnedAt = refPart:GetAttribute("SpawnedAt")
-	local lifetime = refPart:GetAttribute("Lifetime")
-	if type(spawnedAt) == "number" and type(lifetime) == "number" then
-		return formatPetLeaveTime(spawnedAt + lifetime - workspace:GetServerTimeNow())
-	end
-	local timerGui = refPart:FindFirstChild("PetLeaveTimer")
-	if timerGui then
-		local lbl = timerGui:FindFirstChildWhichIsA("TextLabel", true)
-		if lbl and lbl.Text ~= "" then
-			return lbl.Text
-		end
-	end
-	return nil
-end
-
-local function setPetEspTimerTag(container, timerText)
-	local timerTag = container:FindFirstChild("TimerTag")
-	if not timerText or timerText == "" then
-		if timerTag then
-			timerTag:Destroy()
-		end
-		return
-	end
-	if not timerTag then
-		timerTag = Instance.new("Frame")
-		timerTag.Name = "TimerTag"
-		timerTag.Size = UDim2.new(0, 0, 1, 0)
-		timerTag.AutomaticSize = Enum.AutomaticSize.X
-		timerTag.BackgroundTransparency = 1
-		timerTag.Parent = container
-		local timerLay = Instance.new("UIListLayout")
-		timerLay.FillDirection = Enum.FillDirection.Horizontal
-		timerLay.VerticalAlignment = Enum.VerticalAlignment.Center
-		timerLay.Padding = UDim.new(0, 4)
-		timerLay.Parent = timerTag
-		local timerImg = Instance.new("ImageLabel")
-		timerImg.Name = "TimerImg"
-		timerImg.Size = UDim2.new(0, 11, 0, 11)
-		timerImg.BackgroundTransparency = 1
-		timerImg.ScaleType = Enum.ScaleType.Fit
-		timerImg.Image = PET_LEAVE_TIMER_ICON
-		timerImg.Parent = timerTag
-		local timerLbl = Instance.new("TextLabel")
-		timerLbl.Name = "TimerLbl"
-		timerLbl.BackgroundTransparency = 1
-		timerLbl.TextColor3 = Color3.fromRGB(255, 220, 120)
-		timerLbl.TextSize = 10
-		timerLbl.Font = Enum.Font.MontserratBold
-		timerLbl.Size = UDim2.new(0, 0, 1, 0)
-		timerLbl.AutomaticSize = Enum.AutomaticSize.X
-		timerLbl.Parent = timerTag
-	end
-	local timerLbl = timerTag:FindFirstChild("TimerLbl")
-	if timerLbl then
-		timerLbl.Text = timerText
-	end
-end
-
-local function updatePetEspPriceTag(container, model, map)
-	local refPartName = model.Name:gsub("^WildPet_[^_]+_", "")
-	local wildPetRef = map and map:FindFirstChild("WildPetRef")
-	local refPart = wildPetRef and wildPetRef:FindFirstChild(refPartName)
-	local price = refPart and (refPart:GetAttribute("Price") or 0) or 0
-	local priceTag = container:FindFirstChild("PriceTag")
-	if price > 0 then
-		if not priceTag then
-			priceTag = Instance.new("Frame")
-			priceTag.Name = "PriceTag"
-			priceTag.Size = UDim2.new(0, 0, 1, 0)
-			priceTag.AutomaticSize = Enum.AutomaticSize.X
-			priceTag.BackgroundTransparency = 1
-			priceTag.Parent = container
-			local priceLay = Instance.new("UIListLayout")
-			priceLay.FillDirection = Enum.FillDirection.Horizontal
-			priceLay.VerticalAlignment = Enum.VerticalAlignment.Center
-			priceLay.Padding = UDim.new(0, 4)
-			priceLay.Parent = priceTag
-			local coinImg = Instance.new("ImageLabel")
-			coinImg.Name = "CoinImg"
-			coinImg.Size = UDim2.new(0, 11, 0, 11)
-			coinImg.BackgroundTransparency = 1
-			coinImg.ScaleType = Enum.ScaleType.Fit
-			coinImg.Parent = priceTag
-			getFruitAsset("SheckleCoin", nil, coinImg)
-			local priceLbl = Instance.new("TextLabel")
-			priceLbl.Name = "PriceLbl"
-			priceLbl.BackgroundTransparency = 1
-			priceLbl.TextColor3 = Color3.fromRGB(80, 220, 100)
-			priceLbl.TextSize = 10
-			priceLbl.Font = Enum.Font.MontserratBold
-			priceLbl.Size = UDim2.new(0, 0, 1, 0)
-			priceLbl.AutomaticSize = Enum.AutomaticSize.X
-			priceLbl.Parent = priceTag
-		end
-		local priceLbl = priceTag:FindFirstChild("PriceLbl")
-		if priceLbl then
-			priceLbl.Text = string.format("%.0f", price):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
-		end
-	elseif priceTag then
-		priceTag:Destroy()
-	end
-end
-
-local function updatepetesp()
-	if not petEsprunning then
-		for _, bill in pairs(petEspBills) do
-			pcall(function() bill:Destroy() end)
-		end
-		table.clear(petEspBills)
-		clearEspBeamTable(petEspBeams)
-		return
-	end
-	local map = workspace:FindFirstChild("Map")
-	local spawnsFolder = map and map:FindFirstChild("WildPetSpawns")
-	if not spawnsFolder then return end
-	local currentBills = {}
-	local currentBeams = {}
-	local character = localPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	for _, model in spawnsFolder:GetChildren() do
-		if model:IsA("Model") then
-			local petName = model:GetAttribute("PetName") or model.Name
-			local cleanName = petName:gsub("^WildPet_[^_]+_", "")
-			local petSize = model:GetAttribute("PetSize") or model:GetAttribute("Size") or "Normal"
-			local petType = model:GetAttribute("PetType") or model:GetAttribute("Type") or model:GetAttribute("Variant") or "Normal"
-			local mutation = model:GetAttribute("Mutation")
-			if not mutation or mutation == "" or mutation == "None" then
-				if petType ~= "Normal" and petType ~= "" then
-					mutation = petType
-				elseif petSize ~= "Normal" and petSize ~= "" then
-					mutation = petSize
-				else
-					mutation = "None"
-				end
-			end
-			local rarity = "Common"
-			local info = getPetInfo(cleanName)
-			if info then
-				rarity = info.Rarity or "Common"
-			end
-			if petEspallowed(cleanName) and petEspmutallowed(mutation, petSize, petType) and petEsprarityallowed(rarity) then
-				local hp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-				if hp then
-					local distOk = true
-					if rootPart then
-						local dist = (hp.Position - rootPart.Position).Magnitude
-						if dist > petEspmaxdist then distOk = false end
-					end
-					if distOk then
-						local bb = hp:FindFirstChild("PetESP")
-						if not bb then
-							bb = Instance.new("BillboardGui")
-							bb.Name = "PetESP"
-							bb.Size = UDim2.new(0, 320, 0, 30)
-							bb.StudsOffset = Vector3.new(0, 3.5, 0)
-							bb.AlwaysOnTop = true
-							bb.Adornee = hp
-							bb.Parent = hp
-						end
-						currentBills[bb] = true
-						petEspBills[bb] = bb
-						local container = bb:FindFirstChild("Container")
-						if not container then
-							container = Instance.new("Frame")
-							container.Name = "Container"
-							container.Size = UDim2.new(0, 0, 1, 0)
-							container.AutomaticSize = Enum.AutomaticSize.X
-							container.BackgroundColor3 = Color3.fromRGB(20, 15, 20)
-							container.BorderSizePixel = 0
-							container.AnchorPoint = Vector2.new(0.5, 0.5)
-							container.Position = UDim2.new(0.5, 0, 0.5, 0)
-							container.Parent = bb
-						end
-						local nameLbl = container:FindFirstChild("NameLbl")
-						if not nameLbl then
-							container:ClearAllChildren()
-							rnd(container, 15)
-							stk(container, Color3.fromRGB(35, 30, 35), 1)
-							pad(container, 6, 6, 12, 12)
-							local lay = Instance.new("UIListLayout")
-							lay.FillDirection = Enum.FillDirection.Horizontal
-							lay.VerticalAlignment = Enum.VerticalAlignment.Center
-							lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-							lay.Padding = UDim.new(0, 8)
-							lay.Parent = container
-							local info = getPetInfo(cleanName)
-							if info and info.IconUrl ~= "" then
-								local img = Instance.new("ImageLabel")
-								img.Size = UDim2.new(0, 18, 0, 18)
-								img.BackgroundTransparency = 1
-								img.ScaleType = Enum.ScaleType.Fit
-								img.Parent = container
-								getOnlineAsset(cleanName, info.IconUrl, img)
-							end
-							local function createLabel(text, color)
-								local lbl = Instance.new("TextLabel")
-								lbl.BackgroundTransparency = 1
-								lbl.Text = text
-								lbl.TextColor3 = color
-								lbl.TextSize = 10
-								lbl.Font = Enum.Font.MontserratBold
-								lbl.Size = UDim2.new(0, 0, 1, 0)
-								lbl.AutomaticSize = Enum.AutomaticSize.X
-								lbl.Parent = container
-								return lbl
-							end
-							local nameLbl = createLabel(cleanName, Color3.fromRGB(255, 255, 255))
-							nameLbl.Name = "NameLbl"
-							local petColor = petColors[rarity] or Color3.fromRGB(255, 255, 255)
-							local mutCol = petColor
-							local useGrad = false
-							local gradColors = nil
-							local animateGrad = false
-							local animSpeed = 0.3
-							if rarity == "Super" then
-								mutCol = Color3.fromRGB(255, 255, 255)
-								useGrad = true
-								gradColors = {
-									ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-									ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 255, 0)),
-									ColorSequenceKeypoint.new(0.4, Color3.fromRGB(0, 255, 0)),
-									ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 255)),
-									ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
-									ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 255))
-								}
-								animateGrad = true
-								animSpeed = 0.4
-							end
-							local rarityLbl = createLabel("[" .. rarity .. "]", mutCol)
-							if useGrad and gradColors then
-								local grad = Instance.new("UIGradient")
-								grad.Color = ColorSequence.new(gradColors)
-								grad.Parent = rarityLbl
-								if animateGrad then
-									task.spawn(function()
-										while rarityLbl and rarityLbl.Parent do
-											local t = (os.clock() * animSpeed) % 1
-											grad.Offset = Vector2.new(-t * 2 + 1, 0)
-											task.wait()
-										end
-									end)
-								end
-							end
-							if mutation ~= "None" then
-								createLabel("[" .. mutation .. "]", Color3.fromRGB(255, 100, 100))
-							end
-							updatePetEspPriceTag(container, model, map)
-							setPetEspTimerTag(container, getWildPetLeaveTimeText(model))
-						else
-							updatePetEspPriceTag(container, model, map)
-							setPetEspTimerTag(container, getWildPetLeaveTimeText(model))
-						end
-						if petEspshowbeam and rootPart and hp then
-							local beamColor = petColors[rarity] or Color3.fromRGB(200, 120, 255)
-							ensureEspBeam(petEspBeams, "PetESP_" .. hp:GetFullName(), true, rootPart, hp, beamColor, currentBeams)
-						end
-					end
-				end
-			end
-		end
-	end
-	syncEspBeamTable(petEspBeams, currentBeams)
-	for bill, _ in pairs(petEspBills) do
-		if not currentBills[bill] then
-			pcall(function() bill:Destroy() end)
-			petEspBills[bill] = nil
-		end
-	end
-end
-local function togglePetESP(val)
-	petEsprunning = val
-	if val then
-		petEspThread = task.spawn(function()
-			while petEsprunning do
-				updatepetesp()
-				task.wait(1)
-			end
-		end)
-	else
-		if petEspThread then
-			task.cancel(petEspThread)
-			petEspThread = nil
-		end
-		updatepetesp()
-	end
-end
-hub:CreateModule("Visuals", {
-	name = "ESP Pets",
-	on = false,
-	bind = "None",
-	desc = "Wild pet ESP.",
-	callback = function(enabled)
-		togglePetESP(enabled)
-	end,
-	opts = {
-		{type = "checkbox", label = "Show Beam", value = false, callback = function(value)
-			petEspshowbeam = value
-			if not value then
-				clearEspBeamTable(petEspBeams)
-			end
-			pcall(updatepetesp)
-		end},
-		{type = "slider", label = "Max Distance", value = 300, min = 50, max = 2000, suffix = " studs", callback = function(value)
-			petEspmaxdist = value
-		end},
-		{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			petEspftype = value
-		end},
-		{type = "multiselect", label = "Filter Pets", value = "", list = gameLists.pets, callback = function(value)
-			petEspflist = value
-		end},
-		{type = "dropdown", label = "Filter Variations Type", value = "Whitelist", list = {"Whitelist","Blacklist"}, callback = function(value)
-			petEspmuttype = value
-		end},
-		{type = "multiselect", label = "Filter Variations / Sizes", value = "None", list = gameLists.petMutations, callback = function(value)
-			petEspmutlist = value
-		end},
-		{type = "multiselect", label = "Filter Rarities", value = "", list = gameLists.rarities, callback = function(value)
-			petEsprarities = value
-		end, onCreate = function(widget)
-			registerGameListWidget(widget, "rarities")
-		end},
-	}
-})
-end)()
-;(function()
-	local PARTICLE_AURA_DATA = {
-		{ "starlight", "rbxassetid://134645216613107" },
-		{ "heavenly", "rbxassetid://139300897520961" },
-		{ "ribbon", "rbxassetid://132069507632161" },
-		{ "sakura", "rbxassetid://81755778619404" },
-		{ "angel", "rbxassetid://97658130917593" },
-		{ "wind", "rbxassetid://80694081850877" },
-		{ "flow", "rbxassetid://119913533725648" },
-		{ "star", "rbxassetid://73754563740680" },
-	}
-	local PARTICLE_AURA_NAMES = {}
-	local particleAuraIdByName = {}
-	for _, row in ipairs(PARTICLE_AURA_DATA) do
-		table.insert(PARTICLE_AURA_NAMES, row[1])
-		particleAuraIdByName[row[1]] = row[2]
-	end
-	local loadedParticleAuras = {}
-	local selfAuraParticles = {}
-	local otherAuraParticles = {}
-	local showAuraOnOthers = false
-
-	local Toggles = {
-		SelfAuraEnabled = { Value = false },
-	}
-	local Options = {
-		SelfAuraType = { Value = "None" },
-		SelfAuraColor = { Value = Color3.fromRGB(133, 220, 255) },
-	}
-
-	local AURA_PART_ALIASES = {
-		Head = "Head",
-		UpperTorso = "Torso",
-		LowerTorso = "Torso",
-		Torso = "Torso",
-		LeftUpperArm = "Left Arm",
-		LeftLowerArm = "Left Arm",
-		LeftHand = "Left Arm",
-		["Left Arm"] = "Left Arm",
-		RightUpperArm = "Right Arm",
-		RightLowerArm = "Right Arm",
-		RightHand = "Right Arm",
-		["Right Arm"] = "Right Arm",
-		LeftUpperLeg = "Left Leg",
-		LeftLowerLeg = "Left Leg",
-		LeftFoot = "Left Leg",
-		["Left Leg"] = "Left Leg",
-		RightUpperLeg = "Right Leg",
-		RightLowerLeg = "Right Leg",
-		RightFoot = "Right Leg",
-		["Right Leg"] = "Right Leg",
-		HumanoidRootPart = "HumanoidRootPart",
-	}
-
-	local function mapCharacterParts(character)
-		local parts = {}
-		for _, child in ipairs(character:GetChildren()) do
-			if child:IsA("BasePart") then
-				parts[child.Name] = child
-			end
-		end
-		return parts
-	end
-
-	local function resolveAuraTargetPart(localParts, templatePartName)
-		local direct = localParts[templatePartName]
-		if direct then
-			return direct
-		end
-		local alias = AURA_PART_ALIASES[templatePartName]
-		if alias then
-			return localParts[alias]
-		end
-		return localParts.HumanoidRootPart or localParts.Torso
-	end
-
-	local function getParticleAuraTemplate(name)
-		local cached = loadedParticleAuras[name]
-		if cached then return cached end
-		local id = particleAuraIdByName[name]
-		if not id then return nil end
-		local ok, result = pcall(function()
-			return game:GetObjects(id)[1]
-		end)
-		if ok and result then
-			loadedParticleAuras[name] = result
-			return result
-		end
-		return nil
-	end
-
-	local function clearAuraFromCharacter(character)
-		local stored = character == localPlayer.Character and selfAuraParticles or otherAuraParticles[character]
-		if stored then
-			for _, p in ipairs(stored) do
-				if p then p:Destroy() end
-			end
-		end
-		if character == localPlayer.Character then
-			table.clear(selfAuraParticles)
-		elseif character then
-			otherAuraParticles[character] = nil
-		end
-		if character then
-			for _, inst in ipairs(character:GetDescendants()) do
-				if inst.Name == "LarpticAuraParticle" then
-					inst:Destroy()
-				end
-			end
-		end
-	end
-
-	local function clearSelfAura()
-		clearAuraFromCharacter(localPlayer.Character)
-	end
-
-	local function clearOtherAuras()
-		for character in pairs(otherAuraParticles) do
-			clearAuraFromCharacter(character)
-		end
-		table.clear(otherAuraParticles)
-	end
-
-	local function applyAuraToCharacter(character)
-		if not character then return end
-		local isLocal = character == localPlayer.Character
-		if isLocal then
-			clearAuraFromCharacter(character)
-		else
-			if not showAuraOnOthers then
-				clearAuraFromCharacter(character)
-				return
-			end
-			clearAuraFromCharacter(character)
-		end
-		if not (Toggles.SelfAuraEnabled and Toggles.SelfAuraEnabled.Value) then return end
-		local auraName = (Options.SelfAuraType and Options.SelfAuraType.Value) or "None"
-		if auraName == "None" or not particleAuraIdByName[auraName] then return end
-		local col = Options.SelfAuraColor.Value or Color3.fromRGB(133, 220, 255)
-		local created = applyParticleAuraToCharacter(character, auraName, col, true)
-		if isLocal then
-			selfAuraParticles = created
-		else
-			otherAuraParticles[character] = created
-		end
-	end
-
-	local function refreshSelfAura()
-		applyAuraToCharacter(localPlayer.Character)
-	end
-
-	local function refreshOtherAuras()
-		if not showAuraOnOthers then
-			clearOtherAuras()
-			return
-		end
-		for _, player in ipairs(Players:GetPlayers()) do
-			if player ~= localPlayer and player.Character then
-				applyAuraToCharacter(player.Character)
-			end
-		end
-	end
-
-	local function refreshAllAuras()
-		refreshSelfAura()
-		refreshOtherAuras()
-	end
-
-	local function bindOtherAuraPlayer(player)
-		if player == localPlayer then return end
-		player.CharacterAdded:Connect(function(character)
-			task.delay(0.75, function()
-				if showAuraOnOthers then
-					applyAuraToCharacter(character)
-				end
-			end)
-			character.AncestryChanged:Connect(function(_, parent)
-				if not parent then
-					otherAuraParticles[character] = nil
-				end
-			end)
-		end)
-		if player.Character then
-			task.defer(function()
-				if showAuraOnOthers then
-					applyAuraToCharacter(player.Character)
-				end
-			end)
-		end
-	end
-
-	for _, player in ipairs(Players:GetPlayers()) do
-		bindOtherAuraPlayer(player)
-	end
-	Players.PlayerAdded:Connect(bindOtherAuraPlayer)
-
-	local function tintParticleSubtree(root, color)
-		if not color or not root then return end
-		local seq = ColorSequence.new(color)
-		local function tintOne(obj)
-			if obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Trail") then
-				obj.Color = seq
-			elseif obj:IsA("PointLight") then
-				obj.Color = color
-			end
-		end
-		tintOne(root)
-		for _, d in ipairs(root:GetDescendants()) do
-			tintOne(d)
-		end
-	end
-
-	local function setParticleEmittersEnabledInSubtree(root, enabled)
-		if not root then return end
-		if root:IsA("ParticleEmitter") then
-			root.Enabled = enabled
-		end
-		for _, d in ipairs(root:GetDescendants()) do
-			if d:IsA("ParticleEmitter") then
-				d.Enabled = enabled
-			end
-		end
-	end
-
-	local function applyParticleAuraToCharacter(character, auraName, color, isPersistent)
-		local auraObj = getParticleAuraTemplate(auraName)
-		if not auraObj then return {} end
-
-		local localParts = mapCharacterParts(character)
-		local cloned = auraObj:Clone()
-		local created = {}
-
-		for _, part in ipairs(cloned:GetChildren()) do
-			local targetPart = resolveAuraTargetPart(localParts, part.Name)
-			if targetPart then
-				for _, child in ipairs(part:GetChildren()) do
-					local inst = child:Clone()
-					inst.Name = "LarpticAuraParticle"
-					inst.Parent = targetPart
-					if color then
-						tintParticleSubtree(inst, color)
-					end
-					table.insert(created, inst)
-				end
-			end
-		end
-		cloned:Destroy()
-
-		for _, p in ipairs(created) do
-			setParticleEmittersEnabledInSubtree(p, true)
-		end
-
-		if not isPersistent then
-			task.delay(1.6, function()
-				for _, p in ipairs(created) do
-					if p and p.Parent then
-						setParticleEmittersEnabledInSubtree(p, false)
-					end
-				end
-			end)
-			task.delay(2.5, function()
-				for _, p in ipairs(created) do
-					if p then p:Destroy() end
-				end
-			end)
-		end
-
-		return created
-	end
-
-	localPlayer.CharacterAdded:Connect(function()
-		if Toggles.SelfAuraEnabled and Toggles.SelfAuraEnabled.Value then
-			task.delay(0.75, refreshAllAuras)
-		end
-	end)
-
-	local selfAuraTypeValues = { "None" }
-	for _, n in ipairs(PARTICLE_AURA_NAMES) do
-		table.insert(selfAuraTypeValues, n)
-	end
-
-	hub:CreateModule("Visuals", {
-		name = "Particle Aura",
-		on = false,
-		bind = "None",
-		desc = "Custom particle aura on your character.",
-		callback = function(enabled)
-			Toggles.SelfAuraEnabled.Value = enabled
-			if enabled then
-				refreshAllAuras()
-			else
-				clearSelfAura()
-				clearOtherAuras()
-			end
-		end,
-		opts = {
-			{type = "dropdown", label = "Aura Type", value = "None", list = selfAuraTypeValues, callback = function(value)
-				Options.SelfAuraType.Value = value
-				if Toggles.SelfAuraEnabled.Value then
-					refreshAllAuras()
-				end
-			end},
-			{type = "color", label = "Aura Color", value = Color3.fromRGB(133, 220, 255), callback = function(color)
-				Options.SelfAuraColor.Value = color
-				if Toggles.SelfAuraEnabled.Value then
-					refreshAllAuras()
-				end
-			end},
-			{type = "checkbox", label = "Show On Others", value = false, callback = function(value)
-				showAuraOnOthers = value
-				if Toggles.SelfAuraEnabled.Value then
-					refreshAllAuras()
-				else
-					clearOtherAuras()
-				end
-			end},
-		}
-	})
-	local chamsEnabled = false
-	local showChamsOnOthers = false
-	local chamsColor = Color3.new(1, 1, 1)
-	local savedChamState = {}
-	local CHAM_PART_NAMES = {
-		"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
-		"LeftFoot", "LeftHand", "LeftLowerArm", "LeftLowerLeg",
-		"LeftUpperArm", "LeftUpperLeg", "LowerTorso", "RightFoot",
-		"RightHand", "RightLowerArm", "RightLowerLeg",
-		"RightUpperArm", "RightUpperLeg", "UpperTorso",
-	}
-	local function captureBodyColors(bodyColors)
-		if not bodyColors then
-			return nil
-		end
-		return {
-			HeadColor = bodyColors.HeadColor,
-			TorsoColor = bodyColors.TorsoColor,
-			LeftArmColor = bodyColors.LeftArmColor,
-			RightArmColor = bodyColors.RightArmColor,
-			LeftLegColor = bodyColors.LeftLegColor,
-			RightLegColor = bodyColors.RightLegColor,
-		}
-	end
-	local function restoreBodyColors(bodyColors, saved)
-		if not bodyColors or not saved then
-			return
-		end
-		bodyColors.HeadColor = saved.HeadColor
-		bodyColors.TorsoColor = saved.TorsoColor
-		bodyColors.LeftArmColor = saved.LeftArmColor
-		bodyColors.RightArmColor = saved.RightArmColor
-		bodyColors.LeftLegColor = saved.LeftLegColor
-		bodyColors.RightLegColor = saved.RightLegColor
-	end
-	local function captureChamAppearance(char)
-		if not char or savedChamState[char] then
-			return
-		end
-		local save = {
-			parts = {},
-			bodyColors = captureBodyColors(char:FindFirstChildOfClass("BodyColors")),
-		}
-		for _, name in ipairs(CHAM_PART_NAMES) do
-			local part = char:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				save.parts[name] = {
-					Color = part.Color,
-					Material = part.Material,
-				}
-			end
-		end
-		savedChamState[char] = save
-	end
-	local function applyChamsToCharacter(char)
-		if not char then return end
-		captureChamAppearance(char)
-		for _, name in ipairs(CHAM_PART_NAMES) do
-			local part = char:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				part.Material = Enum.Material.ForceField
-				part.Color = chamsColor
-			end
-		end
-	end
-	local function removeChamsFromCharacter(char)
-		if not char then return end
-		local save = savedChamState[char]
-		if not save then
-			for _, name in ipairs(CHAM_PART_NAMES) do
-				local part = char:FindFirstChild(name)
-				if part and part:IsA("BasePart") and part.Material == Enum.Material.ForceField then
-					part.Material = Enum.Material.Plastic
-				end
-			end
-			return
-		end
-		for name, state in pairs(save.parts) do
-			local part = char:FindFirstChild(name)
-			if part and part:IsA("BasePart") then
-				part.Material = state.Material
-				part.Color = state.Color
-			end
-		end
-		restoreBodyColors(char:FindFirstChildOfClass("BodyColors"), save.bodyColors)
-		savedChamState[char] = nil
-	end
-	local function refreshChamsForCharacter(char)
-		if not char then return end
-		if chamsEnabled then
-			applyChamsToCharacter(char)
-		else
-			removeChamsFromCharacter(char)
-		end
-	end
-	local function refreshChams()
-		refreshChamsForCharacter(localPlayer.Character)
-		if showChamsOnOthers then
-			for _, player in ipairs(Players:GetPlayers()) do
-				if player ~= localPlayer then
-					refreshChamsForCharacter(player.Character)
-				end
-			end
-		else
-			for _, player in ipairs(Players:GetPlayers()) do
-				if player ~= localPlayer then
-					removeChamsFromCharacter(player.Character)
-				end
-			end
-		end
-	end
-	local function bindOtherChamsPlayer(player)
-		if player == localPlayer then return end
-		player.CharacterAdded:Connect(function(character)
-			task.delay(0.5, function()
-				if chamsEnabled and showChamsOnOthers then
-					applyChamsToCharacter(character)
-				end
-			end)
-		end)
-	end
-	for _, player in ipairs(Players:GetPlayers()) do
-		bindOtherChamsPlayer(player)
-	end
-	Players.PlayerAdded:Connect(bindOtherChamsPlayer)
-	localPlayer.CharacterAdded:Connect(function(character)
-		character.AncestryChanged:Connect(function(_, parent)
-			if not parent then
-				savedChamState[character] = nil
-			end
-		end)
-		task.delay(0.5, refreshChams)
-	end)
-	hub:CreateModule("Visuals", {
-		name = "Chams",
-		on = false,
-		bind = "None",
-		desc = "ForceField material overlay on your character.",
-		callback = function(enabled)
-			chamsEnabled = enabled
-			refreshChams()
-		end,
-		opts = {
-			{type = "color", label = "Chams Color", value = Color3.new(1, 1, 1), callback = function(color)
-				chamsColor = color
-				if chamsEnabled then refreshChams() end
-			end},
-			{type = "checkbox", label = "Show On Others", value = false, callback = function(value)
-				showChamsOnOthers = value
-				refreshChams()
-			end},
-		}
-	})
-	local Lighting = game:GetService("Lighting")
-	local worldLightingMode = false
-	local worldLightingTech = "ShadowMap"
-	local worldTimeEnabled = false
-	local worldTimeHour = 4.5
-	local worldBetterShadows = false
-	local worldRtxEnabled = false
-	local worldAtmEnabled = false
-	local worldAtmDensity = 0.35
-	local worldAtmOffset = 0
-	local worldAtmHaze = 1
-	local worldAtmGlare = 10
-	local worldAtmColor = Color3.fromRGB(199, 212, 255)
-	local worldAtmDecay = Color3.fromRGB(106, 112, 125)
-	local worldAmbientEnabled = false
-	local worldAmbientColor = Color3.fromRGB(178, 178, 178)
-	local worldOutdoorAmbientColor = Color3.fromRGB(178, 178, 178)
-	local worldWeatherEnabled = false
-	local worldWeatherType = "rain"
-	local worldWeatherRate = 100
-	local worldWeatherColor = Color3.fromRGB(255, 255, 255)
-	local worldSkyboxEnabled = false
-	local worldSkyboxType = "realistic"
-	local casualAtmosphere = nil
-	local casualSky = nil
-	local casualWeatherPart = nil
-	local casualWeatherConn = nil
-	local casualWeatherRainEmitter = nil
-	local casualWeatherLightRainEmitter = nil
-	local casualConfigureWeather = nil
-	local casualRtxBloom = nil
-	local casualRtxSunRays = nil
-	local casualRtxColorCorrection = nil
-	local worldHeartbeatConn = nil
-	local lightingController = nil
-	local WEATHER_MAP_SIZE = Vector3.new(1024, 1, 1024)
-	local WEATHER_MAP_HEIGHT = 85
-	local function getLightingController()
-		if lightingController ~= nil then
-			return lightingController
-		end
-		local ok, ctrl = pcall(function()
-			local playerScripts = localPlayer:FindFirstChild("PlayerScripts")
-			local controllers = playerScripts and playerScripts:FindFirstChild("Controllers")
-			local module = controllers and controllers:FindFirstChild("LightingController")
-			if module then
-				return require(module)
-			end
-			return require(game:GetService("StarterPlayer").StarterPlayerScripts.Controllers.LightingController)
-		end)
-		if ok and ctrl then
-			lightingController = ctrl
-		end
-		return lightingController
-	end
-	local function pushLightingOverride(props)
-		if not props then
-			return
-		end
-		local ctrl = getLightingController()
-		if ctrl and ctrl.SetImmediate then
-			pcall(function()
-				ctrl:SetImmediate(props)
-			end)
-		end
-		for key, value in props do
-			pcall(function()
-				Lighting[key] = value
-			end)
-		end
-	end
-	local function applyLightingTech()
-		if not worldLightingMode then
-			return
-		end
-		pcall(function()
-			Lighting.Technology = Enum.Technology[worldLightingTech]
-		end)
-		if sethiddenproperty then
-			pcall(function()
-				sethiddenproperty(Lighting, "Technology", Enum.Technology[worldLightingTech])
-			end)
-		end
-	end
-	local function applyBetterShadows()
-		if not worldBetterShadows then
-			return
-		end
-		pushLightingOverride({
-			GlobalShadows = true,
-			ShadowSoftness = 0.1,
-		})
-		pcall(function()
-			if Enum.Technology.Future then
-				Lighting.Technology = Enum.Technology.Future
-			else
-				Lighting.Technology = Enum.Technology.ShadowMap
-			end
-		end)
-		if sethiddenproperty then
-			pcall(function()
-				sethiddenproperty(Lighting, "Technology", Enum.Technology.Future or Enum.Technology.ShadowMap)
-			end)
-		end
-	end
-	local function clearBetterShadows()
-		pushLightingOverride({
-			GlobalShadows = true,
-			ShadowSoftness = 0.2,
-		})
-	end
-	local function applyRtxEffects()
-		if not worldRtxEnabled then
-			return
-		end
-		pushLightingOverride({
-			GlobalShadows = true,
-			ShadowSoftness = 0.02,
-			ExposureCompensation = 0.15,
-		})
-		pcall(function()
-			if Enum.Technology.Future then
-				Lighting.Technology = Enum.Technology.Future
-			end
-		end)
-		if not casualRtxBloom then
-			casualRtxBloom = Lighting:FindFirstChild("CasualRTXBloom") or Instance.new("BloomEffect")
-			casualRtxBloom.Name = "CasualRTXBloom"
-			casualRtxBloom.Intensity = 0.7
-			casualRtxBloom.Size = 24
-			casualRtxBloom.Threshold = 0.95
-			casualRtxBloom.Parent = Lighting
-		end
-		if not casualRtxSunRays then
-			casualRtxSunRays = Lighting:FindFirstChild("CasualRTXSunRays") or Instance.new("SunRaysEffect")
-			casualRtxSunRays.Name = "CasualRTXSunRays"
-			casualRtxSunRays.Intensity = 0.25
-			casualRtxSunRays.Spread = 0.6
-			casualRtxSunRays.Parent = Lighting
-		end
-		if not casualRtxColorCorrection then
-			casualRtxColorCorrection = Lighting:FindFirstChild("CasualRTXCC") or Instance.new("ColorCorrectionEffect")
-			casualRtxColorCorrection.Name = "CasualRTXCC"
-			casualRtxColorCorrection.Brightness = 0.03
-			casualRtxColorCorrection.Contrast = 0.12
-			casualRtxColorCorrection.Saturation = 0.18
-			casualRtxColorCorrection.Parent = Lighting
-		end
-		casualRtxBloom.Enabled = true
-		casualRtxSunRays.Enabled = true
-		casualRtxColorCorrection.Enabled = true
-	end
-	local function clearRtxEffects()
-		if casualRtxBloom then casualRtxBloom.Enabled = false end
-		if casualRtxSunRays then casualRtxSunRays.Enabled = false end
-		if casualRtxColorCorrection then casualRtxColorCorrection.Enabled = false end
-	end
-	local function needsWorldHeartbeat()
-		return worldTimeEnabled or worldAmbientEnabled or worldLightingMode or worldBetterShadows or worldRtxEnabled
-	end
-	local function refreshWorldOverrides()
-		if worldTimeEnabled then
-			pushLightingOverride({ ClockTime = worldTimeHour })
-		end
-		if worldAmbientEnabled then
-			pushLightingOverride({
-				Ambient = worldAmbientColor,
-				OutdoorAmbient = worldOutdoorAmbientColor,
-				Brightness = 3,
-			})
-		end
-		if worldLightingMode then
-			applyLightingTech()
-		end
-		if worldBetterShadows then
-			applyBetterShadows()
-		end
-		if worldRtxEnabled then
-			applyRtxEffects()
-		end
-	end
-	local function startWorldHeartbeat()
-		if worldHeartbeatConn then
-			return
-		end
-		worldHeartbeatConn = RS.Heartbeat:Connect(function()
-			if needsWorldHeartbeat() then
-				refreshWorldOverrides()
-			end
-		end)
-	end
-	local function stopWorldHeartbeat()
-		if worldHeartbeatConn then
-			worldHeartbeatConn:Disconnect()
-			worldHeartbeatConn = nil
-		end
-	end
-	local function syncWorldHeartbeat()
-		if needsWorldHeartbeat() then
-			startWorldHeartbeat()
-			refreshWorldOverrides()
-		else
-			stopWorldHeartbeat()
-		end
-	end
-	local function applyAtmosphere()
-		if not casualAtmosphere or not casualAtmosphere.Parent then
-			casualAtmosphere = Instance.new("Atmosphere")
-			casualAtmosphere.Name = "CasualAtmosphere"
-			casualAtmosphere.Parent = Lighting
-		end
-		pcall(function()
-			casualAtmosphere.Density = worldAtmDensity
-			casualAtmosphere.Offset = worldAtmOffset
-			casualAtmosphere.Haze = worldAtmHaze
-			casualAtmosphere.Glare = worldAtmGlare
-			casualAtmosphere.Color = worldAtmColor
-			casualAtmosphere.Decay = worldAtmDecay
-		end)
-	end
-	local function clearAtmosphere()
-		if casualAtmosphere then
-			pcall(function() casualAtmosphere:Destroy() end)
-			casualAtmosphere = nil
-		end
-	end
-	local function applyAmbient()
-		pushLightingOverride({
-			Ambient = worldAmbientColor,
-			OutdoorAmbient = worldOutdoorAmbientColor,
-			Brightness = 3,
-		})
-		syncWorldHeartbeat()
-	end
-	local function clearAmbient()
-		local ctrl = getLightingController()
-		if ctrl and ctrl.GetDefault then
-			local ok, defaults = pcall(function()
-				return ctrl:GetDefault()
-			end)
-			if ok and defaults then
-				pushLightingOverride({
-					Ambient = defaults.Ambient,
-					OutdoorAmbient = defaults.OutdoorAmbient,
-					Brightness = defaults.Brightness,
-				})
-				return
-			end
-		end
-		pushLightingOverride({
-			Ambient = Color3.fromRGB(0, 0, 0),
-			OutdoorAmbient = Color3.fromRGB(70, 70, 70),
-		})
-		syncWorldHeartbeat()
-	end
-	local function applySkyboxPreset(sky, preset)
-		if not sky then return end
-		preset = preset or worldSkyboxType
-		if preset == "realistic" then
-			sky.MoonTextureId = "rbxasset://sky/moon.jpg"
-			sky.SkyboxBk = "rbxassetid://15502511288"
-			sky.SkyboxDn = "rbxassetid://15502508460"
-			sky.SkyboxFt = "rbxassetid://15502510289"
-			sky.SkyboxLf = "rbxassetid://15502507918"
-			sky.SkyboxRt = "rbxassetid://15502509398"
-			sky.SkyboxUp = "rbxassetid://15502511911"
-			sky.StarCount = 3000
-			sky.CelestialBodiesShown = true
-		end
-	end
-	local function clearWeatherPart()
-		if casualWeatherPart then
-			pcall(function() casualWeatherPart:Destroy() end)
-			casualWeatherPart = nil
-		end
-		casualWeatherRainEmitter = nil
-		casualWeatherLightRainEmitter = nil
-	end
-	local function configureRainEmitters()
-		local isLightRain = worldWeatherType == "light rain"
-		local rate = math.max(worldWeatherRate * 6, 600)
-		if casualWeatherRainEmitter then
-			casualWeatherRainEmitter.Color = ColorSequence.new(worldWeatherColor)
-			casualWeatherRainEmitter.Rate = isLightRain and 0 or rate
-			casualWeatherRainEmitter.Enabled = not isLightRain
-		end
-		if casualWeatherLightRainEmitter then
-			casualWeatherLightRainEmitter.Color = ColorSequence.new(worldWeatherColor)
-			casualWeatherLightRainEmitter.Rate = rate
-			casualWeatherLightRainEmitter.Enabled = isLightRain
-		end
-	end
-	local function createMapRain()
-		clearWeatherPart()
-		local part = Instance.new("Part")
-		part.Name = "CasualWeatherRain"
-		part.Size = WEATHER_MAP_SIZE
-		part.Transparency = 1
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.Parent = workspace
-		local rain = Instance.new("ParticleEmitter")
-		rain.Name = "WeatherEmitterPrimary"
-		rain.Texture = "rbxassetid://1822883048"
-		rain.Brightness = 1
-		rain.Color = ColorSequence.new(worldWeatherColor)
-		rain.LightEmission = 0.05
-		rain.LightInfluence = 0.9
-		rain.Orientation = Enum.ParticleOrientation.FacingCamera
-		rain.Size = NumberSequence.new(10)
-		rain.Squash = NumberSequence.new(2)
-		rain.Transparency = NumberSequence.new(0.5)
-		rain.ZOffset = 0
-		rain.EmissionDirection = Enum.NormalId.Bottom
-		rain.Enabled = true
-		rain.Lifetime = NumberRange.new(0.8, 0.8)
-		rain.Rotation = NumberRange.new(0, 0)
-		rain.RotSpeed = NumberRange.new(0, 0)
-		rain.Speed = NumberRange.new(60, 60)
-		rain.SpreadAngle = Vector2.new(0, 0)
-		rain.VelocityInheritance = 0
-		rain.Drag = 0
-		rain.LockedToPart = true
-		rain.Parent = part
-		casualWeatherRainEmitter = rain
-		local lightRain = Instance.new("ParticleEmitter")
-		lightRain.Name = "LightRainEffect"
-		lightRain.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-		lightRain.Brightness = 1
-		lightRain.Color = ColorSequence.new(worldWeatherColor)
-		lightRain.LightEmission = 0.05
-		lightRain.LightInfluence = 0.9
-		lightRain.Orientation = Enum.ParticleOrientation.FacingCamera
-		lightRain.Size = NumberSequence.new(1)
-		lightRain.Squash = NumberSequence.new(4)
-		lightRain.Transparency = NumberSequence.new(0.5)
-		lightRain.ZOffset = 0
-		lightRain.EmissionDirection = Enum.NormalId.Bottom
-		lightRain.Enabled = false
-		lightRain.Lifetime = NumberRange.new(0.8, 0.8)
-		lightRain.Rotation = NumberRange.new(0, 0)
-		lightRain.RotSpeed = NumberRange.new(0, 0)
-		lightRain.Speed = NumberRange.new(60, 60)
-		lightRain.SpreadAngle = Vector2.new(0, 0)
-		lightRain.VelocityInheritance = 0
-		lightRain.Drag = 0
-		lightRain.LockedToPart = true
-		lightRain.Parent = part
-		casualWeatherLightRainEmitter = lightRain
-		casualWeatherPart = part
-		configureRainEmitters()
-	end
-	local function clearWeather()
-		if casualWeatherConn then
-			casualWeatherConn:Disconnect()
-			casualWeatherConn = nil
-		end
-		casualConfigureWeather = nil
-		clearWeatherPart()
-	end
-	local function buildWeather()
-		clearWeather()
-		local kind = worldWeatherType
-		if kind == "rain" or kind == "light rain" then
-			createMapRain()
-			casualConfigureWeather = configureRainEmitters
-			casualWeatherConn = RS.RenderStepped:Connect(function()
-				if casualWeatherPart and casualWeatherPart.Parent then
-					local cam = workspace.CurrentCamera
-					if cam then
-						casualWeatherPart.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, WEATHER_MAP_HEIGHT, 0))
-					end
-				end
-			end)
-			return
-		end
-		local part = Instance.new("Part")
-		part.Name = "CasualWeatherSnow"
-		part.Size = Vector3.new(260, 1, 260)
-		part.Transparency = 1
-		part.Anchored = true
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.Parent = workspace
-		local tertiary = Instance.new("ParticleEmitter")
-		tertiary.Name = "WeatherEmitterTertiary"
-		tertiary.Parent = part
-		casualWeatherPart = part
-		casualConfigureWeather = function()
-			local primaryRate = math.max(worldWeatherRate, 0)
-			tertiary.Texture = "rbxassetid://99851851"
-			tertiary.Brightness = 1
-			tertiary.LightEmission = 0.5
-			tertiary.LightInfluence = 0
-			tertiary.Orientation = Enum.ParticleOrientation.FacingCamera
-			tertiary.Lifetime = NumberRange.new(5, 10)
-			tertiary.Speed = NumberRange.new(30, 30)
-			tertiary.Size = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.33),
-				NumberSequenceKeypoint.new(0.5, 0.551),
-				NumberSequenceKeypoint.new(1, 0.401),
-			})
-			tertiary.Color = ColorSequence.new(worldWeatherColor)
-			tertiary.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.74),
-				NumberSequenceKeypoint.new(0.35, 0.973),
-				NumberSequenceKeypoint.new(0.7, 0.77),
-				NumberSequenceKeypoint.new(1, 1),
-			})
-			tertiary.SpreadAngle = Vector2.new(50, 50)
-			tertiary.Rate = math.max(primaryRate * 10, 1000)
-			tertiary.EmissionDirection = Enum.NormalId.Bottom
-			tertiary.Enabled = true
-		end
-		casualConfigureWeather()
-		casualWeatherConn = RS.RenderStepped:Connect(function()
-			if part and part.Parent then
-				local cam = workspace.CurrentCamera
-				if cam then
-					part.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 85, 0))
-				end
-			end
-		end)
-	end
-	hub:CreateModule("Visuals", {
-		name = "Lighting",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		callback = function() end,
-		opts = {
-			{type = "checkbox", label = "Lighting Mode", value = false, callback = function(value)
-				worldLightingMode = value
-				syncWorldHeartbeat()
-			end},
-			{type = "dropdown", label = "Lighting Technology", value = "ShadowMap", list = {"Compatibility", "Voxel", "ShadowMap", "Future", "Legacy"}, callback = function(value)
-				worldLightingTech = value
-				if worldLightingMode then
-					syncWorldHeartbeat()
-				end
-			end},
-			{type = "checkbox", label = "World Time", value = false, callback = function(value)
-				worldTimeEnabled = value
-				syncWorldHeartbeat()
-			end},
-			{type = "slider", label = "Hour", value = 4.5, min = 0, max = 24, increment = 0.1, callback = function(value)
-				worldTimeHour = value
-				if worldTimeEnabled then
-					syncWorldHeartbeat()
-				end
-			end},
-			{type = "checkbox", label = "RTX", value = false, callback = function(value)
-				worldRtxEnabled = value
-				if value then
-					applyRtxEffects()
-				else
-					clearRtxEffects()
-				end
-				syncWorldHeartbeat()
-			end},
-			{type = "checkbox", label = "Better Shadows", value = false, callback = function(value)
-				worldBetterShadows = value
-				if value then
-					applyBetterShadows()
-				else
-					clearBetterShadows()
-				end
-				syncWorldHeartbeat()
-			end},
-		}
-	})
-	hub:CreateModule("Visuals", {
-		name = "Ambience",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		callback = function() end,
-		opts = {
-			{type = "checkbox", label = "Ambient", value = false, callback = function(value)
-				worldAmbientEnabled = value
-				if value then applyAmbient() else clearAmbient() end
-			end},
-			{type = "color", label = "Ambient Color", value = Color3.fromRGB(178, 178, 178), callback = function(color)
-				worldAmbientColor = color
-				if worldAmbientEnabled then applyAmbient() end
-			end},
-			{type = "color", label = "Outdoor Ambient Color", value = Color3.fromRGB(178, 178, 178), callback = function(color)
-				worldOutdoorAmbientColor = color
-				if worldAmbientEnabled then applyAmbient() end
-			end},
-			{type = "checkbox", label = "Atmosphere", value = false, callback = function(value)
-				worldAtmEnabled = value
-				if value then applyAtmosphere() else clearAtmosphere() end
-			end},
-			{type = "color", label = "Atmosphere Color", value = Color3.fromRGB(199, 212, 255), callback = function(color)
-				worldAtmColor = color
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-			{type = "color", label = "Atmosphere Decay", value = Color3.fromRGB(106, 112, 125), callback = function(color)
-				worldAtmDecay = color
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-			{type = "slider", label = "Atmosphere Density", value = 0.35, min = 0, max = 1, increment = 0.01, callback = function(value)
-				worldAtmDensity = value
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-			{type = "slider", label = "Atmosphere Haze", value = 1, min = 0, max = 10, increment = 0.1, callback = function(value)
-				worldAtmHaze = value
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-			{type = "slider", label = "Atmosphere Glare", value = 10, min = 0, max = 10, increment = 0.1, callback = function(value)
-				worldAtmGlare = value
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-			{type = "slider", label = "Atmosphere Offset", value = 0, min = 0, max = 1, increment = 0.01, callback = function(value)
-				worldAtmOffset = value
-				if worldAtmEnabled then applyAtmosphere() end
-			end},
-		}
-	})
-	hub:CreateModule("Visuals", {
-		name = "Weather",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		callback = function() end,
-		opts = {
-			{type = "checkbox", label = "Weather", value = false, callback = function(value)
-				worldWeatherEnabled = value
-				if value then buildWeather() else clearWeather() end
-			end},
-			{type = "dropdown", label = "Weather Type", value = "rain", list = {"light rain", "rain", "snow"}, callback = function(value)
-				worldWeatherType = value
-				if worldWeatherEnabled then buildWeather() end
-			end},
-			{type = "color", label = "Weather Color", value = Color3.fromRGB(255, 255, 255), callback = function(color)
-				worldWeatherColor = color
-				if worldWeatherEnabled then buildWeather() end
-			end},
-			{type = "slider", label = "Weather Rate", value = 100, min = 0, max = 100, increment = 1, callback = function(value)
-				worldWeatherRate = value
-				if worldWeatherEnabled and casualConfigureWeather then
-					casualConfigureWeather()
-				end
-			end},
-		}
-	})
-	hub:CreateModule("Visuals", {
-		name = "Skybox",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		callback = function() end,
-		opts = {
-			{type = "checkbox", label = "Skybox", value = false, callback = function(value)
-				worldSkyboxEnabled = value
-				if value then
-					local existing = Lighting:FindFirstChildOfClass("Sky")
-					if existing and existing ~= casualSky then
-						pcall(function() existing.Parent = nil end)
-					end
-					if not (casualSky and casualSky.Parent) then
-						casualSky = Instance.new("Sky")
-						casualSky.Name = "CasualSky"
-						applySkyboxPreset(casualSky)
-						casualSky.Parent = Lighting
-					else
-						applySkyboxPreset(casualSky)
-						casualSky.Parent = Lighting
-					end
-				elseif casualSky then
-					pcall(function() casualSky.Parent = nil end)
-				end
-			end},
-			{type = "dropdown", label = "Skybox Preset", value = "realistic", list = {"realistic"}, callback = function(value)
-				worldSkyboxType = value
-				if worldSkyboxEnabled and casualSky then
-					applySkyboxPreset(casualSky, value)
-				end
-			end},
-		}
-	})
-end)()
-;(function()
-	local autocodesrunning = false
-	hub:CreateModule("Misc", {
-		name = "Auto Claim Codes",
-		on = false,
-		bind = "None",
-		desc = "Redeem promo codes.",
-		callback = function(enabled)
-			autocodesrunning = enabled
-			if not enabled then return end
-			task.spawn(function()
-				local codes = {"TEAMGREENBEAN", "WATERYOPLANTS", "REMEMBERTODRINKWATER"}
-				local stealNet = nil
-				pcall(function()
-					local sm = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules") or game:GetService("ReplicatedStorage"):WaitForChild("SharedModules", 5)
-					local netMod = sm and (sm:FindFirstChild("Networking") or sm:WaitForChild("Networking", 3))
-					if netMod then
-						stealNet = require(netMod)
-					end
-				end)
-				if not stealNet then
-					autocodesrunning = false
-					return
-				end
-				local submitted = 0
-				for _, code in codes do
-					if not autocodesrunning then break end
-					pcall(function()
-						stealNet.Settings.SubmitCode:Fire(code)
+						updatestuff()
 					end)
-					task.wait(1.5)
 				end
-				autocodesrunning = false
 			end)
-		end,
-		opts = {
-			{type = "button", label = "Claim Now", callback = function()
-				local stealNet = nil
-				pcall(function()
-					local sm = game:GetService("ReplicatedStorage"):FindFirstChild("SharedModules") or game:GetService("ReplicatedStorage"):WaitForChild("SharedModules", 5)
-					local netMod = sm and (sm:FindFirstChild("Networking") or sm:WaitForChild("Networking", 3))
-					if netMod then
-						stealNet = require(netMod)
-					end
+
+			syde:AddConnection(SVPicker.InputEnded, function(i)
+				if i.UserInputType == Enum.UserInputType.MouseButton1 and SV then
+					SV:Disconnect()
+					SV = nil
+					AddRecentColor(data.Color)
+				end
+			end)
+
+			syde:AddConnection(HUESlider.InputBegan, function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					HUE = runservice.RenderStepped:Connect(function()
+						local mouse = game.Players.LocalPlayer:GetMouse()
+						local ColorX = math.clamp(mouse.X - HUESlider.AbsolutePosition.X, 0, HUESlider.AbsoluteSize.X) / HUESlider.AbsoluteSize.X
+
+						HSV[1] = 1 - ColorX
+
+						updatestuff()
+					end)
+				end
+			end)
+
+			syde:AddConnection(HUESlider.InputEnded, function(i)
+				if i.UserInputType == Enum.UserInputType.MouseButton1 and HUE then
+					HUE:Disconnect()
+					HUE = nil
+					AddRecentColor(data.Color)
+				end
+			end)
+
+			colorpicker.HueValues.HEX.V.HEXBox.FocusLost:Connect(function(Enter)
+				if not Enter then return end
+
+				local hexInput = colorpicker.HueValues.HEX.V.HEXBox.Text
+
+				local success, result = pcall(function()
+					return Color3.fromHex(hexInput)
 				end)
-				if not stealNet then return end
-				local codes = {"TEAMGREENBEAN", "WATERYOPLANTS", "REMEMBERTODRINKWATER"}
-				task.spawn(function()
-					for _, code in codes do
-						pcall(function() stealNet.Settings.SubmitCode:Fire(code) end)
-						task.wait(1.5)
-					end
-				end)
-			end},
-		}
-	})
-	local antiragdollenabled = false
-	local antiragdollconn = nil
-	local antiragdollcharconn = nil
-	function dounragdoll(char)
-		local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-		if not torso then return end
-		for _, v in pairs(torso:GetDescendants()) do
-			if v:IsA("Motor6D") then
-				v.Enabled = true
-			end
-		end
-		for _, v in pairs(torso:GetChildren()) do
-			if v.Name == "RagdollConstraint" then
-				pcall(function()
-					if v.Attachment0 then v.Attachment0:Destroy() end
-					if v.Attachment1 then v.Attachment1:Destroy() end
-					v:Destroy()
-				end)
-			end
-			if v:IsA("Motor6D") then
-				pcall(function() v.Part1.CollisionGroup = "Default" end)
-			end
-		end
-		for _, v in pairs(char:GetChildren()) do
-			if v.Name == "Collider" or v:IsA("ForceField") or v.Name == "RagdollConstraint" then
-				pcall(function() v:Destroy() end)
-			end
-		end
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.AutoRotate = true
-			hum.PlatformStand = false
-			char:SetAttribute("Ragdolled", nil)
-			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-		end
-	end
-	local function setupAntiRagdoll()
-		local char = localPlayer.Character
-		if not char then return end
-		if antiragdollconn then
-			antiragdollconn:Disconnect()
-			antiragdollconn = nil
-		end
-		antiragdollconn = char:GetAttributeChangedSignal("Ragdolled"):Connect(function()
-			if not antiragdollenabled then return end
-			if not char:GetAttribute("Ragdolled") then return end
-			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				hrp.Anchored = true
-				hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-				hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-			end
-			dounragdoll(char)
-			task.spawn(function()
-				for i = 1, 5 do
-					if hrp then
-						hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-						hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-					end
-					task.wait(0.02)
-				end
-				if hrp then
-					hrp.Anchored = false
-				end
-			end)
-		end)
-	end
-	hub:CreateModule("Misc", {
-		name = "Anti Ragdoll",
-		on = false,
-		bind = "None",
-		desc = "Anti ragdoll.",
-		callback = function(enabled)
-			antiragdollenabled = enabled
-			if enabled then
-				setupAntiRagdoll()
-				if antiragdollcharconn then
-					antiragdollcharconn:Disconnect()
-				end
-				antiragdollcharconn = localPlayer.CharacterAdded:Connect(function()
-					if antiragdollenabled then
-						task.wait(1)
-						setupAntiRagdoll()
-					end
-				end)
-			else
-				if antiragdollconn then
-					antiragdollconn:Disconnect()
-					antiragdollconn = nil
-				end
-				if antiragdollcharconn then
-					antiragdollcharconn:Disconnect()
-					antiragdollcharconn = nil
-				end
-			end
-		end,
-		opts = {}
-	})
 
-	local antiWheelbarrowEnabled = false
-	local antiWheelbarrowConns = {}
-
-	local function isWheelbarrowTool(tool)
-		return tool and tool:IsA("Tool") and (tool:GetAttribute("Wheelbarrow") ~= nil or tool.Name == "Wheelbarrow")
-	end
-
-	local function getSeatOwner(seat)
-		if not seat then
-			return nil
-		end
-		local model = seat:FindFirstAncestorOfClass("Model")
-		while model do
-			local player = game.Players:GetPlayerFromCharacter(model)
-			if player then
-				return player
-			end
-			if model.Parent and model.Parent:IsA("Model") then
-				model = model.Parent
-			else
-				break
-			end
-		end
-		return nil
-	end
-
-	local function isForeignWheelbarrowSeat(seat)
-		if not seat or not (seat:IsA("Seat") or seat:IsA("VehicleSeat")) then
-			return false
-		end
-		local tool = seat:FindFirstAncestorWhichIsA("Tool")
-		if not isWheelbarrowTool(tool) then
-			return false
-		end
-		local owner = getSeatOwner(seat)
-		return owner ~= nil and owner ~= localPlayer
-	end
-
-	local function escapeWheelbarrowSeat(hum)
-		if not hum then
-			return
-		end
-		hum.Sit = false
-		pcall(function()
-			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-		end)
-		pcall(function()
-			hum.Jump = true
-		end)
-	end
-
-	local function onAntiWheelbarrowSeated(hum, active, seat)
-		if not antiWheelbarrowEnabled or not active then
-			return
-		end
-		if isForeignWheelbarrowSeat(seat) then
-			escapeWheelbarrowSeat(hum)
-		end
-	end
-
-	local function bindAntiWheelbarrowCharacter(char)
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if not hum then
-			return
-		end
-		table.insert(antiWheelbarrowConns, hum.Seated:Connect(function(active, seat)
-			onAntiWheelbarrowSeated(hum, active, seat)
-		end))
-		table.insert(antiWheelbarrowConns, game:GetService("RunService").Heartbeat:Connect(function()
-			if not antiWheelbarrowEnabled then
-				return
-			end
-			local seat = hum.SeatPart
-			if isForeignWheelbarrowSeat(seat) then
-				escapeWheelbarrowSeat(hum)
-			end
-		end))
-	end
-
-	local function clearAntiWheelbarrowConnections()
-		for _, conn in antiWheelbarrowConns do
-			if conn and conn.Connected then
-				conn:Disconnect()
-			end
-		end
-		table.clear(antiWheelbarrowConns)
-	end
-
-	hub:CreateModule("Misc", {
-		name = "Anti Wheelbarrow",
-		on = false,
-		bind = "None",
-		desc = "Block other players from seating you in their wheelbarrow.",
-		callback = function(enabled)
-			antiWheelbarrowEnabled = enabled
-			clearAntiWheelbarrowConnections()
-			if enabled and localPlayer.Character then
-				bindAntiWheelbarrowCharacter(localPlayer.Character)
-			end
-			if enabled then
-				table.insert(antiWheelbarrowConns, localPlayer.CharacterAdded:Connect(function(char)
-					if antiWheelbarrowEnabled then
-						task.wait(0.2)
-						bindAntiWheelbarrowCharacter(char)
-					end
-				end))
-			end
-		end,
-		opts = {}
-	})
-end)()
-;(function()
-	local invValActive = false
-	local invValSetupDone = false
-	local invValConns = {}
-	local invValUpdatePending = false
-	local invValUpdateRun = nil
-	local invValLastTotalText = ""
-	local invValLastSlotText = setmetatable({}, { __mode = "k" })
-	local invValSellFlags = nil
-	local invValNetworking = nil
-	local invValDailyDealCache = { at = 0, available = false, timeRemaining = 0 }
-	local INV_VAL_LABEL = "CasualInvValue"
-	local INV_VAL_TOTAL = "CasualInvTotal"
-	local invValFont = nil
-	local invValFontSize = 9
-	local updateInvValLabels
-	local function ensureInvSellFlags()
-		if invValSellFlags then return invValSellFlags end
-		local flagsMod = findModule and findModule("SellFlags")
-		if flagsMod and safeRequire then
-			invValSellFlags = safeRequire(flagsMod)
-		end
-		return invValSellFlags
-	end
-	local function getDailyDealInfo()
-		local now = os.clock()
-		if now - invValDailyDealCache.at < 12 then
-			return invValDailyDealCache.available, invValDailyDealCache.timeRemaining
-		end
-		invValDailyDealCache.at = now
-		local ok, deal = pcall(function()
-			if not invValNetworking then
-				invValNetworking = require(game:GetService("ReplicatedStorage").SharedModules.Networking)
-			end
-			return invValNetworking.NPCS.CheckDailyDeal:Fire()
-		end)
-		if ok and deal then
-			invValDailyDealCache.available = deal.Available == true
-			invValDailyDealCache.timeRemaining = tonumber(deal.TimeRemaining) or 0
-		end
-		return invValDailyDealCache.available, invValDailyDealCache.timeRemaining
-	end
-	local function scheduleInvValUpdate()
-		if not invValActive then return end
-		if invValUpdatePending then return end
-		invValUpdatePending = true
-		invValUpdateRun = task.delay(0.25, function()
-			invValUpdatePending = false
-			invValUpdateRun = nil
-			if invValActive then
-				pcall(updateInvValLabels)
-			end
-		end)
-	end
-	local function resolveInvUIFont()
-		if invValFont then
-			return invValFont, invValFontSize
-		end
-		for _, gui in localPlayer.PlayerGui:GetChildren() do
-			if gui.Name:find("Syde", 1, true) then
-				local sample = gui:FindFirstChildWhichIsA("TextLabel", true)
-				if sample and sample.TextSize > 0 then
-					invValFont = sample.Font
-					invValFontSize = math.clamp(sample.TextSize - 1, 8, 14)
-					return invValFont, invValFontSize
-				end
-			end
-		end
-		local bg = localPlayer.PlayerGui:FindFirstChild("BackpackGui")
-		local backpack = bg and bg:FindFirstChild("Backpack")
-		local hotbar = backpack and backpack:FindFirstChild("Hotbar")
-		if hotbar then
-			for _, slot in hotbar:GetChildren() do
-				local lbl = slot:FindFirstChild("ToolName", true)
-				if lbl and lbl:IsA("TextLabel") then
-					invValFont = lbl.Font
-					invValFontSize = math.clamp(lbl.TextSize - 1, 8, 14)
-					return invValFont, invValFontSize
-				end
-			end
-		end
-		invValFont = Enum.Font.GothamBold
-		invValFontSize = 9
-		return invValFont, invValFontSize
-	end
-	local function formatInvVal(n)
-		n = tonumber(n) or 0
-		if n <= 0 then return "0" end
-		if n >= 1e15 then
-			local v = n / 1e15
-			return (string.format("%.2fQa", v):gsub("%.?0+([Qa])$", "%1"))
-		elseif n >= 1e12 then
-			local v = n / 1e12
-			return (string.format("%.2fT", v):gsub("%.?0+([T])$", "%1"))
-		elseif n >= 1e9 then
-			local v = n / 1e9
-			return (string.format("%.2fB", v):gsub("%.?0+([B])$", "%1"))
-		elseif n >= 1e6 then
-			local v = n / 1e6
-			return (string.format("%.2fM", v):gsub("%.?0+([M])$", "%1"))
-		elseif n >= 1000 then
-			local v = n / 1000
-			return (string.format("%.2fK", v):gsub("%.?0+([K])$", "%1"))
-		else
-			return tostring(math.floor(n))
-		end
-	end
-	local function resolveSlotCropName(displayName)
-		if not displayName or displayName == "" then return nil end
-		if displayCropMap[displayName] then
-			return displayCropMap[displayName]
-		end
-		local clean = displayName:gsub("%s+", ""):lower()
-		for k, v in pairs(displayCropMap) do
-			if k:gsub("%s+", ""):lower() == clean then
-				return v
-			end
-		end
-		return getcropname(displayName) or displayName
-	end
-	local function weightKey(weight)
-		return string.format("%.2f", tonumber(weight) or 0)
-	end
-	local function getFruitToolCalcInputs(item)
-		if not item or (not item:IsA("Tool") and not item:IsA("Configuration")) then return end
-		local fruitName = item:GetAttribute("FruitName")
-			or item:GetAttribute("Fruit")
-			or item:GetAttribute("SeedName")
-			or item:GetAttribute("CorePartName")
-		if not fruitName or fruitName == "" then
-			local nameClean = item.Name:gsub("%[.-%]", ""):match("^%s*(.-)%s*$")
-			fruitName = getcropname(nameClean) or displayCropMap[nameClean] or nameClean
-		end
-		if not fruitName or fruitName == "" then return end
-		local sizeMulti = tonumber(item:GetAttribute("SizeMultiplier")) or tonumber(item:GetAttribute("SizeMulti"))
-		if not sizeMulti then
-			local w = tonumber(item:GetAttribute("Weight"))
-			local baseW = getbaseweight(fruitName) or 1
-			if w and baseW > 0 then
-				sizeMulti = w > 50 and (w / 1000 / baseW) or (w / baseW)
-			end
-		end
-		if not sizeMulti or sizeMulti <= 0 then sizeMulti = 1 end
-		local mutation = item:GetAttribute("Mutation") or "None"
-		local decay = tonumber(item:GetAttribute("DecayAlpha")) or 0
-		return fruitName, sizeMulti, mutation, decay
-	end
-	local function calcFruitToolBasePrice(item)
-		local fruitName, sizeMulti, mutation, decay = getFruitToolCalcInputs(item)
-		if not fruitName then return 0 end
-		local vc = getValCalc()
-		if vc and typeof(vc) == "function" then
-			local ok, res = pcall(vc, fruitName, sizeMulti, mutation ~= "None" and mutation or nil, localPlayer, decay or 0)
-			if ok and res and res > 0 then
-				return math.floor(res)
-			end
-		end
-		return 0
-	end
-	local function calcFruitToolPrice(item)
-		local fruitName, sizeMulti, mutation, decay = getFruitToolCalcInputs(item)
-		if not fruitName then return 0 end
-		return calcGamePrice(fruitName, sizeMulti, mutation, decay)
-	end
-	local function collectFruitTools()
-		local items = {}
-		local function addItem(item)
-			if not item or (not item:IsA("Tool") and not item:IsA("Configuration")) then return end
-			local isFruit = item:GetAttribute("HarvestedFruit") or item:GetAttribute("FruitName") or item:GetAttribute("Fruit") or item:GetAttribute("FruitProxy")
-			local fruitName = item:GetAttribute("FruitName") or item:GetAttribute("Fruit")
-			if not fruitName then
-				local clean = item.Name:gsub("%[.-%]", ""):match("^%s*(.-)%s*$")
-				if clean and clean ~= "Shovel" and clean ~= "Лопата" and clean ~= "Build" and clean ~= "Построить" then
-					local mapped = resolveSlotCropName(clean)
-					if mapped and mapped ~= clean then
-						fruitName = mapped
-						isFruit = true
-					end
-				end
-			end
-			if isFruit or fruitName then
-				local crop = resolveSlotCropName(fruitName) or fruitName
-				local basePrice = calcFruitToolBasePrice(item)
-				local price = calcFruitToolPrice(item)
-				local itemId = item:GetAttribute("Id")
-				table.insert(items, {
-					id = itemId,
-					itemRef = item,
-					fruitName = fruitName,
-					cropName = crop,
-					weight = tonumber(item:GetAttribute("Weight")) or 0,
-					weightKey = weightKey(item:GetAttribute("Weight")),
-					basePrice = basePrice,
-					price = price,
-				})
-			end
-		end
-		local bp = localPlayer:FindFirstChildOfClass("Backpack")
-		if bp then
-			for _, child in bp:GetChildren() do
-				addItem(child)
-			end
-		end
-		local char = localPlayer.Character
-		if char then
-			for _, child in char:GetChildren() do
-				addItem(child)
-			end
-		end
-		return items
-	end
-	local function parseSlotWeight(text)
-		if not text or text == "" then return nil end
-		local numStr = text:match("([%d%.]+)")
-		return tonumber(numStr)
-	end
-	local function isFruitSlot(slotBtn)
-		local toolNameLbl = slotBtn:FindFirstChild("ToolName", true)
-		local toolCountLbl = slotBtn:FindFirstChild("ToolCount", true)
-		local displayName = toolNameLbl and toolNameLbl.Text or ""
-		if displayName == "" or displayName == "Shovel" or displayName == "Build" or displayName == "Построить" or displayName == "Лопата" then
-			return nil
-		end
-		local cropName = resolveSlotCropName(displayName)
-		if not cropName then return nil end
-		local countText = toolCountLbl and toolCountLbl.Text or ""
-		local parsedWeight = parseSlotWeight(countText)
-		return cropName, parsedWeight, weightKey(parsedWeight)
-	end
-	local function getSlotTool(slotBtn)
-		for _, child in slotBtn:GetChildren() do
-			if child:IsA("Tool") then
-				return child
-			end
-		end
-		for _, desc in slotBtn:GetDescendants() do
-			if desc:IsA("ObjectValue") and desc.Value and desc.Value:IsA("Tool") then
-				return desc.Value
-			end
-		end
-		return nil
-	end
-	local function matchFruitForSlot(cropName, weightKg, weightKey, pool, slotTool)
-		if slotTool then
-			local slotId = slotTool:GetAttribute("Id")
-			if slotId then
-				for i, entry in pool do
-					if entry.id == slotId then
-						return table.remove(pool, i)
-					end
-				end
-			end
-			for i, entry in pool do
-				if entry.itemRef == slotTool then
-					return table.remove(pool, i)
-				end
-			end
-		end
-		local bestIdx, bestDiff = nil, math.huge
-		for i, entry in pool do
-			if entry.cropName == cropName or entry.fruitName == cropName then
-				if weightKey and entry.weightKey == weightKey then
-					return table.remove(pool, i)
-				end
-				if weightKg and entry.weight then
-					local diff = math.abs(entry.weight - weightKg)
-					if diff < 0.08 and diff < bestDiff then
-						bestIdx = i
-						bestDiff = diff
-					end
-				end
-			end
-		end
-		if bestIdx then
-			return table.remove(pool, bestIdx)
-		end
-		if cropName then
-			local onlyIdx, count = nil, 0
-			for i, entry in pool do
-				if entry.cropName == cropName or entry.fruitName == cropName then
-					onlyIdx = i
-					count = count + 1
-				end
-			end
-			if count == 1 then
-				return table.remove(pool, onlyIdx)
-			end
-		end
-		return nil
-	end
-	local function ensureSlotValueLabel(slotBtn)
-		local lbl = slotBtn:FindFirstChild(INV_VAL_LABEL)
-		if lbl then return lbl end
-		lbl = Instance.new("TextLabel")
-		lbl.Name = INV_VAL_LABEL
-		lbl.BackgroundTransparency = 1
-		lbl.Parent = slotBtn
-		local font, size = resolveInvUIFont()
-		lbl.Size = UDim2.new(1, -6, 0, 12)
-		lbl.Position = UDim2.new(0.5, 0, 0, 1)
-		lbl.AnchorPoint = Vector2.new(0.5, 0)
-		lbl.ZIndex = slotBtn.ZIndex + 5
-		lbl.Font = font
-		lbl.TextSize = size
-		lbl.TextColor3 = Color3.fromRGB(110, 255, 140)
-		lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		lbl.TextStrokeTransparency = 0
-		lbl.TextXAlignment = Enum.TextXAlignment.Center
-		lbl.TextYAlignment = Enum.TextYAlignment.Center
-		return lbl
-	end
-	local function removeSlotValueLabel(slotBtn)
-		local lbl = slotBtn:FindFirstChild(INV_VAL_LABEL)
-		if lbl then
-			lbl:Destroy()
-		end
-	end
-	local function ensureInvTotalLabel(inv)
-		local totalLbl = inv:FindFirstChild(INV_VAL_TOTAL)
-		if totalLbl then return totalLbl end
-		totalLbl = Instance.new("TextLabel")
-		totalLbl.Name = INV_VAL_TOTAL
-		totalLbl.BackgroundTransparency = 1
-		totalLbl.Parent = inv
-		totalLbl.AnchorPoint = Vector2.new(0, 0)
-		totalLbl.Position = UDim2.new(0, 170, 0, 7)
-		totalLbl.Size = UDim2.new(0, 340, 0, 24)
-		local font, size = resolveInvUIFont()
-		totalLbl.Font = font
-		totalLbl.TextSize = math.max(size + 3, 13)
-		totalLbl.TextColor3 = Color3.fromRGB(255, 220, 90)
-		totalLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		totalLbl.TextStrokeTransparency = 0
-		totalLbl.TextXAlignment = Enum.TextXAlignment.Left
-		totalLbl.ZIndex = 6
-		return totalLbl
-	end
-	local function cleanInvValLabels(backpack)
-		if not backpack then return end
-		local function cleanContainer(container)
-			if not container then return end
-			for _, child in container:GetChildren() do
-				if child:IsA("GuiButton") then
-					removeSlotValueLabel(child)
-				end
-			end
-		end
-		cleanContainer(backpack:FindFirstChild("Hotbar"))
-		local inv = backpack:FindFirstChild("Inventory")
-		if inv then
-			local totalLbl = inv:FindFirstChild(INV_VAL_TOTAL)
-			if totalLbl then
-				totalLbl:Destroy()
-			end
-			local scroll = inv:FindFirstChild("ScrollingFrame")
-			cleanContainer(scroll and scroll:FindFirstChild("UIGridFrame"))
-		end
-	end
-	updateInvValLabels = function()
-		if not invValActive then return end
-		local bg = localPlayer.PlayerGui:FindFirstChild("BackpackGui")
-		if not bg then return end
-		local backpack = bg:FindFirstChild("Backpack")
-		if not backpack then return end
-		local tools = collectFruitTools()
-		local totalValue = 0
-		local totalBaseValue = 0
-		for _, entry in tools do
-			totalValue = totalValue + entry.price
-			totalBaseValue = totalBaseValue + (entry.basePrice or entry.price)
-		end
-		local sellFlags = ensureInvSellFlags()
-		local dailyPrice = 0
-		if sellFlags and sellFlags.DailyDealPrice and totalBaseValue > 0 then
-			dailyPrice = sellFlags.DailyDealPrice(totalBaseValue)
-		end
-		local pool = {}
-		for _, entry in tools do
-			table.insert(pool, entry)
-		end
-		local seenSlots = {}
-		local function processContainer(container)
-			if not container then return end
-			for _, slotBtn in container:GetChildren() do
-				if slotBtn:IsA("GuiButton") then
-					seenSlots[slotBtn] = true
-					local cropName, weightKg, weightKey = isFruitSlot(slotBtn)
-					if cropName then
-						local matched = matchFruitForSlot(cropName, weightKg, weightKey, pool, getSlotTool(slotBtn))
-						if matched and matched.price > 0 then
-							local lbl = ensureSlotValueLabel(slotBtn)
-							local slotText = formatInvVal(matched.price)
-							if invValLastSlotText[slotBtn] ~= slotText then
-								lbl.Text = slotText
-								invValLastSlotText[slotBtn] = slotText
-							end
-							lbl.Visible = true
-						else
-							removeSlotValueLabel(slotBtn)
-							invValLastSlotText[slotBtn] = nil
-						end
-					else
-						removeSlotValueLabel(slotBtn)
-						invValLastSlotText[slotBtn] = nil
-					end
-				end
-			end
-		end
-		processContainer(backpack:FindFirstChild("Hotbar"))
-		local inv = backpack:FindFirstChild("Inventory")
-		if inv then
-			local scroll = inv:FindFirstChild("ScrollingFrame")
-			processContainer(scroll and scroll:FindFirstChild("UIGridFrame"))
-			local totalLbl = ensureInvTotalLabel(inv)
-			local totalText = "Total: " .. formatInvVal(totalValue)
-			if dailyPrice > 0 then
-				local dealAvailable = getDailyDealInfo()
-				if dealAvailable then
-					totalText = totalText .. " | Daily: " .. formatInvVal(dailyPrice)
-				else
-					totalText = totalText .. " | Daily: " .. formatInvVal(dailyPrice) .. " (CD)"
-				end
-			end
-			if invValLastTotalText ~= totalText then
-				totalLbl.Text = totalText
-				invValLastTotalText = totalText
-			end
-			totalLbl.Visible = true
-		end
-		for slotBtn in invValLastSlotText do
-			if not seenSlots[slotBtn] or not slotBtn.Parent then
-				invValLastSlotText[slotBtn] = nil
-			end
-		end
-	end
-	function stopInvValCalc()
-		invValActive = false
-		invValSetupDone = false
-		if invValUpdateRun then
-			pcall(function() task.cancel(invValUpdateRun) end)
-			invValUpdateRun = nil
-		end
-		invValUpdatePending = false
-		invValLastTotalText = ""
-		table.clear(invValLastSlotText)
-		invValDailyDealCache.at = 0
-		for _, conn in invValConns do
-			pcall(function() conn:Disconnect() end)
-		end
-		table.clear(invValConns)
-		local bg = localPlayer.PlayerGui:FindFirstChild("BackpackGui")
-		if bg then
-			cleanInvValLabels(bg:FindFirstChild("Backpack"))
-		end
-	end
-	function startInvValCalc()
-		pcall(refreshGameLists)
-		if not valCalc then
-			local fvc = findModule and findModule("FruitValueCalc")
-			if fvc and safeRequire then
-				valCalc = safeRequire(fvc)
-			end
-		end
-		ensureInvSellFlags()
-		if invValSetupDone then
-			scheduleInvValUpdate()
-			return
-		end
-		invValSetupDone = true
-		task.spawn(function()
-			local bg = localPlayer.PlayerGui:WaitForChild("BackpackGui", 30)
-			if not bg or not invValActive then return end
-			local backpack = bg:WaitForChild("Backpack", 10)
-			if not backpack then return end
-			local function hookContainer(container)
-				if not container then return end
-				table.insert(invValConns, container.ChildAdded:Connect(scheduleInvValUpdate))
-				table.insert(invValConns, container.ChildRemoved:Connect(scheduleInvValUpdate))
-			end
-			hookContainer(backpack:FindFirstChild("Hotbar"))
-			local inv = backpack:FindFirstChild("Inventory")
-			if inv then
-				local scroll = inv:FindFirstChild("ScrollingFrame")
-				hookContainer(scroll and scroll:FindFirstChild("UIGridFrame"))
-			end
-			local bp = localPlayer:WaitForChild("Backpack")
-			table.insert(invValConns, bp.ChildAdded:Connect(scheduleInvValUpdate))
-			table.insert(invValConns, bp.ChildRemoved:Connect(scheduleInvValUpdate))
-			if localPlayer.Character then
-				table.insert(invValConns, localPlayer.Character.ChildAdded:Connect(scheduleInvValUpdate))
-				table.insert(invValConns, localPlayer.Character.ChildRemoved:Connect(scheduleInvValUpdate))
-			end
-			table.insert(invValConns, localPlayer.CharacterAdded:Connect(function(char)
-				table.insert(invValConns, char.ChildAdded:Connect(scheduleInvValUpdate))
-				table.insert(invValConns, char.ChildRemoved:Connect(scheduleInvValUpdate))
-				scheduleInvValUpdate()
-			end))
-			scheduleInvValUpdate()
-		end)
-	end
-	hub:CreateModule("Misc", {
-		name = "Inventory Value Calc",
-		on = false,
-		bind = "None",
-		desc = "Show fruit sell prices in inventory.",
-		callback = function(enabled)
-			invValActive = enabled
-			if enabled then
-				startInvValCalc()
-			else
-				stopInvValCalc()
-			end
-		end,
-		opts = {}
-	})
-end)()
-local jobidInput = ""
-local rollbackEnabled = false
-local rollbackRestoreKbps = 1024
-local function setRollbackActive(enabled)
-	rollbackEnabled = enabled == true
-	local nc = game:GetService("NetworkClient")
-	if rollbackEnabled then
-		pcall(function()
-			nc:SetOutgoingKBPSLimit(0)
-		end)
-		hub:Notify("Rollback on. Changes after this will not save.")
-	else
-		pcall(function()
-			nc:SetOutgoingKBPSLimit(rollbackRestoreKbps)
-		end)
-		hub:Notify("Rollback off. Saving is enabled again.")
-	end
-end
-function rejoinServer()
-	if rollbackEnabled then
-		pcall(function()
-			game:GetService("NetworkClient"):SetOutgoingKBPSLimit(0)
-		end)
-	end
-	pcall(function()
-		game:GetService("TeleportService"):Teleport(game.PlaceId, localPlayer)
-	end)
-end
-function serverHop()
-	local HttpService = game:GetService("HttpService")
-	local TeleportService = game:GetService("TeleportService")
-	local placeId = game.PlaceId
-	if rollbackEnabled then
-		pcall(function()
-			game:GetService("NetworkClient"):SetOutgoingKBPSLimit(0)
-		end)
-	end
-	local ok, result = pcall(function()
-		return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"))
-	end)
-	if ok and result and result.data then
-		local servers = {}
-		for _, server in result.data do
-			if server.playing < server.maxPlayers and server.id ~= game.JobId then
-				table.insert(servers, server.id)
-			end
-		end
-		if #servers > 0 then
-			pcall(function()
-				TeleportService:TeleportToPlaceInstance(placeId, servers[math.random(1, #servers)], localPlayer)
-			end)
-			return
-		end
-	end
-	hub:Notify("No public servers found.")
-end
-function joinJobId()
-	if jobidInput == "" then
-		hub:Notify("Enter a Job ID first.")
-		return
-	end
-	if rollbackEnabled then
-		pcall(function()
-			game:GetService("NetworkClient"):SetOutgoingKBPSLimit(0)
-		end)
-	end
-	pcall(function()
-		game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, jobidInput, localPlayer)
-	end)
-end
-;(function()
-	local AuctioneerMod = nil
-	local NumberUtilsMod = nil
-	local auctionSnapshot = nil
-	local auctionLots = {}
-	local auctionStock = {}
-	local auctionLotByLabel = {}
-	local auctionSelectedLotId = nil
-	local auctionStatusParagraph = nil
-	local auctionLotDropdown = nil
-	local auctionAutoBuy = false
-	local auctionSnipeMode = false
-	local auctionSnipeSeconds = 5
-	local auctionMinPrice = 0
-	local auctionMaxPrice = 0
-	local auctionBuyFilter = ""
-	local auctionItemList = {}
-	local auctionBuyItemsWidget = nil
-	local auctionRarityColors = {
-		Common = "rgb(200,200,210)",
-		Uncommon = "rgb(100,220,140)",
-		Rare = "rgb(100,180,255)",
-		Epic = "rgb(180,100,255)",
-		Legendary = "rgb(255,200,80)",
-		Mythic = "rgb(255,100,100)",
-		Secret = "rgb(255,120,200)",
-	}
-	local function colorToRgb(color)
-		if typeof(color) ~= "Color3" then
-			return "rgb(255,255,255)"
-		end
-		return string.format("rgb(%d,%d,%d)", math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255))
-	end
-	local function getLotRarityColor(lot)
-		local rarity = lot.rarity or lot.Rarity or lot.tier
-		if typeof(rarity) == "string" and auctionRarityColors[rarity] then
-			return auctionRarityColors[rarity]
-		end
-		local rarityGradients = nil
-		pcall(function()
-			rarityGradients = require(game:GetService("ReplicatedStorage").SharedModules.RarityData).Gradients
-		end)
-		if rarityGradients and typeof(rarity) == "string" and rarityGradients[rarity] then
-			local gradient = rarityGradients[rarity]
-			if typeof(gradient) == "ColorSequence" and gradient.Keypoints[1] then
-				return colorToRgb(gradient.Keypoints[1].Value)
-			end
-		end
-		return auctionRarityColors.Rare
-	end
-	local function getAuctioneer()
-		if AuctioneerMod then
-			return AuctioneerMod
-		end
-		pcall(function()
-			AuctioneerMod = require(game:GetService("ReplicatedStorage").SharedModules.Auctioneer)
-		end)
-		return AuctioneerMod
-	end
-	local function getNumberUtils()
-		if NumberUtilsMod then
-			return NumberUtilsMod
-		end
-		pcall(function()
-			NumberUtilsMod = require(game:GetService("ReplicatedStorage").SharedModules.NumberUtils)
-		end)
-		return NumberUtilsMod
-	end
-	local function auctionServerNow()
-		local ok, now = pcall(function()
-			return workspace:GetServerTimeNow()
-		end)
-		return ok and now or os.time()
-	end
-	local function formatAuctionMoney(amount)
-		amount = tonumber(amount) or 0
-		local suffix = getCurrencySuffix()
-		local nu = getNumberUtils()
-		if nu and nu.Abbreviate then
-			local ok, text = pcall(nu.Abbreviate, amount)
-			if ok and text then
-				if text:find("¢") or text:find(suffix, 1, true) then
-					return text
-				end
-				return text .. suffix
-			end
-		end
-		if amount >= 1e6 then
-			return string.format("%.2fM%s", amount / 1e6, suffix)
-		elseif amount >= 1e3 then
-			return string.format("%.2fK%s", amount / 1e3, suffix)
-		end
-		return tostring(math.floor(amount)) .. suffix
-	end
-	local function formatAuctionStockCount(count)
-		count = tonumber(count) or 0
-		local nu = getNumberUtils()
-		if nu and nu.FormatWithCommas then
-			local ok, text = pcall(nu.FormatWithCommas, math.floor(count))
-			if ok and text then
-				return "x" .. text
-			end
-		end
-		return "x" .. tostring(math.floor(count))
-	end
-	local function getLotDisplayName(lot)
-		local ae = getAuctioneer()
-		if ae and ae.DisplayName then
-			local ok, name = pcall(ae.DisplayName, lot)
-			if ok and name and name ~= "" then
-				return name
-			end
-		end
-		return lot.displayName or lot.item or lot.lotId or "Lot"
-	end
-	local function getLotPriceKind(lot)
-		if lot.robuxOnly or (lot.robuxPrice and not lot.dualCurrency and not lot.startPrice and not lot.guiPrice) then
-			return "robux"
-		end
-		return "currency"
-	end
-	local function applyAuctionSnapshot(snap)
-		if typeof(snap) ~= "table" then
-			return false
-		end
-		auctionSnapshot = snap
-		if typeof(snap.stock) == "table" then
-			for lotId, count in snap.stock do
-				auctionStock[lotId] = count
-			end
-		end
-		table.clear(auctionLots)
-		local manifest = snap.manifest
-		if typeof(manifest) == "table" and typeof(manifest.lots) == "table" then
-			for _, lot in manifest.lots do
-				if typeof(lot) == "table" and typeof(lot.lotId) == "string" then
-					table.insert(auctionLots, lot)
-				end
-			end
-		end
-		return true
-	end
-	local function parseAuctionPriceText(text)
-		if typeof(text) ~= "string" or text == "" then
-			return 0
-		end
-		local cleaned = text:gsub("\194\162", ""):gsub("¢", ""):gsub(",", ""):gsub("%s+", "")
-		local numberPart, suffix = cleaned:match("^([%d%.]+)([KMBkmb]?)$")
-		local amount = tonumber(numberPart) or 0
-		local mult = ({ K = 1e3, M = 1e6, B = 1e9 })[string.upper(suffix or "")] or 1
-		return math.floor(amount * mult)
-	end
-	local function parseAuctionRobuxText(text)
-		if typeof(text) ~= "string" or text == "" then
-			return 0
-		end
-		local cleaned = text:gsub("R%$", ""):gsub(",", ""):gsub("%s+", "")
-		cleaned = cleaned:gsub("^[%D]+", "")
-		return tonumber(cleaned) or 0
-	end
-	local function getAuctionRowMainFrame(frame)
-		local inner = frame:FindFirstChild("Frame")
-		if inner then
-			return inner:FindFirstChild("Main_Frame")
-		end
-		return frame:FindFirstChild("Main_Frame")
-	end
-	local function findAuctionButtonPriceText(button)
-		if not button then
-			return nil
-		end
-		local textHolder = button:FindFirstChild("Text")
-		local label = textHolder and textHolder:FindFirstChildWhichIsA("TextLabel", true)
-		if label and label.Text ~= "" then
-			return label.Text
-		end
-		label = button:FindFirstChildWhichIsA("TextLabel", true)
-		if label and label.Text ~= "" then
-			return label.Text
-		end
-		return nil
-	end
-	local function isAuctionCurrencyPriceText(text)
-		if typeof(text) ~= "string" or text == "" then
-			return false
-		end
-		if text:find("R%$", 1, true) or string.lower(text):find("robux", 1, true) then
-			return false
-		end
-		if text:find("¢", 1, true) or text:find("\194\162", 1, true) then
-			return true
-		end
-		return text:match("^%s*[%d%.]+[KMBkmb]?%s*$") ~= nil
-	end
-	local function getAuctionGuiRow(lotId)
-		if typeof(lotId) ~= "string" or lotId == "" then
-			return nil
-		end
-		local playerGui = localPlayer:FindFirstChild("PlayerGui")
-		local auctionGui = playerGui and playerGui:FindFirstChild("Auction")
-		local scroll = auctionGui and auctionGui:FindFirstChild("Frame") and auctionGui.Frame:FindFirstChild("ScrollingFrame")
-		if not scroll then
-			return nil
-		end
-		return scroll:FindFirstChild("Lot_" .. lotId)
-	end
-	local function readAuctionGuiPrices(main)
-		if not main then
-			return nil, nil
-		end
-		local buyButton = main:FindFirstChild("BuyButton")
-		local robuxButton = main:FindFirstChild("RobuxButton")
-		local buyText = findAuctionButtonPriceText(buyButton)
-		local robuxText = findAuctionButtonPriceText(robuxButton)
-		local robuxVisible = robuxButton and robuxButton.Visible
-		local guiPrice = nil
-		local robuxPrice = nil
-		if buyText and isAuctionCurrencyPriceText(buyText) then
-			guiPrice = parseAuctionPriceText(buyText)
-		elseif buyText and buyText ~= "" then
-			robuxPrice = parseAuctionRobuxText(buyText)
-		end
-		if robuxVisible and robuxText and robuxText ~= "" then
-			robuxPrice = parseAuctionRobuxText(robuxText)
-		end
-		return guiPrice, robuxPrice
-	end
-	local function getLiveAuctionPrices(lotId)
-		local row = getAuctionGuiRow(lotId)
-		if not row then
-			return nil, nil
-		end
-		return readAuctionGuiPrices(getAuctionRowMainFrame(row))
-	end
-	local function getLotPrice(lot, now)
-		if getLotPriceKind(lot) == "robux" then
-			if typeof(lot.lotId) == "string" then
-				local _, liveRobux = getLiveAuctionPrices(lot.lotId)
-				if liveRobux and liveRobux > 0 then
-					lot.robuxPrice = liveRobux
-					return liveRobux
-				end
-			end
-			return lot.robuxPrice or 0
-		end
-		if typeof(lot.lotId) == "string" then
-			local livePrice = getLiveAuctionPrices(lot.lotId)
-			if livePrice and livePrice > 0 then
-				lot.guiPrice = livePrice
-				return livePrice
-			end
-		end
-		if typeof(lot.guiPrice) == "number" and lot.guiPrice > 0 then
-			return lot.guiPrice
-		end
-		local ae = getAuctioneer()
-		if ae and ae.CurrentPrice and typeof(lot.rolledAt) == "number" then
-			local ok, price = pcall(ae.CurrentPrice, lot, now)
-			if ok and typeof(price) == "number" and price > 0 then
-				return price
-			end
-		end
-		return lot.startPrice or 0
-	end
-	local function formatAuctionLotPrice(lot, now)
-		local price = getLotPrice(lot, now)
-		if getLotPriceKind(lot) == "robux" then
-			return string.format("%d R$", math.floor(price))
-		end
-		local text = formatAuctionMoney(price)
-		local robuxPrice = lot.robuxPrice
-		if typeof(lot.lotId) == "string" then
-			local _, liveRobux = getLiveAuctionPrices(lot.lotId)
-			if liveRobux and liveRobux > 0 then
-				robuxPrice = liveRobux
-				lot.robuxPrice = liveRobux
-			end
-		end
-		if lot.dualCurrency and typeof(robuxPrice) == "number" and robuxPrice > 0 then
-			text = text .. " / " .. string.format("%d R$", math.floor(robuxPrice))
-		end
-		return text
-	end
-	local function findAuctionRowName(frame)
-		local main = getAuctionRowMainFrame(frame)
-		local itemName = main and main:FindFirstChild("ItemName")
-		if itemName then
-			if itemName:IsA("TextLabel") and itemName.Text ~= "" then
-				return itemName.Text
-			end
-			local nested = itemName:FindFirstChildWhichIsA("TextLabel")
-			if nested and nested.Text ~= "" then
-				return nested.Text
-			end
-		end
-		for _, desc in frame:GetDescendants() do
-			if desc.Name == "ItemName" and desc:IsA("TextLabel") and desc.Text ~= "" then
-				return desc.Text
-			end
-		end
-		return nil
-	end
-	local function parseAuctionMoneyInput(text)
-		if typeof(text) ~= "string" then
-			return 0
-		end
-		local trimmed = text:match("^%s*(.-)%s*$")
-		if trimmed == "" or trimmed == "0" then
-			return 0
-		end
-		return parseAuctionPriceText(trimmed)
-	end
-	local function parseAuctionTimerSeconds(text)
-		local seconds = tonumber(typeof(text) == "string" and text:match("^%s*(.-)%s*$") or text) or 0
-		if seconds < 0 then
-			seconds = 0
-		elseif seconds > 30 then
-			seconds = 30
-		end
-		return seconds
-	end
-	local function buildAuctionItemList()
-		local set = {}
-		local function addName(name)
-			if typeof(name) == "string" and name ~= "" then
-				set[name] = true
-			end
-		end
-		for _, name in gameLists.gears do
-			addName(name)
-		end
-		for _, name in gameLists.seeds do
-			addName(name)
-		end
-		for _, name in gameLists.crates do
-			addName(name)
-		end
-		for _, name in gameLists.crops do
-			addName(name)
-		end
-		for _, name in gameLists.eventSeeds do
-			addName(name)
-		end
-		pcall(function()
-			local packs = game:GetService("ReplicatedStorage"):FindFirstChild("Assets")
-			packs = packs and packs:FindFirstChild("SeedPacks")
-			if packs then
-				for _, pack in packs:GetChildren() do
-					addName(pack.Name)
-				end
-			end
-		end)
-		for _, lot in auctionLots do
-			addName(getLotDisplayName(lot))
-		end
-		table.clear(auctionItemList)
-		for name in set do
-			table.insert(auctionItemList, name)
-		end
-		table.sort(auctionItemList)
-		if auctionBuyItemsWidget and auctionBuyItemsWidget.SetOptions then
-			pcall(function()
-				auctionBuyItemsWidget:SetOptions(auctionItemList)
-			end)
-		end
-		return auctionItemList
-	end
-	local function parseAuctionStockText(text)
-		if typeof(text) ~= "string" or text == "" then
-			return nil
-		end
-		local lower = string.lower(text)
-		if lower == "sold out" or lower:find("^0 stock") or lower:find("out of stock") then
-			return 0
-		end
-		if lower == "expired" then
-			return nil
-		end
-		local count = text:match("[xX]([%d,]+)")
-		if count then
-			local cleaned = count:gsub(",", "")
-			return tonumber(cleaned)
-		end
-		return nil
-	end
-	local function getLiveAuctionStock(lotId)
-		if typeof(lotId) ~= "string" or lotId == "" then
-			return nil
-		end
-		local row = getAuctionGuiRow(lotId)
-		if not row then
-			return nil
-		end
-		local main = getAuctionRowMainFrame(row)
-		local stockLabel = main and main:FindFirstChild("Stock_Text")
-		local stockText = stockLabel and stockLabel:IsA("TextLabel") and stockLabel.Text or ""
-		return parseAuctionStockText(stockText)
-	end
-	local function resolveLotStockCount(lot)
-		if not lot or typeof(lot.lotId) ~= "string" then
-			return lot and lot.stockQuantity or nil
-		end
-		local liveStock = getLiveAuctionStock(lot.lotId)
-		if liveStock ~= nil then
-			auctionStock[lot.lotId] = liveStock
-			return liveStock
-		end
-		local stock = auctionStock[lot.lotId]
-		if stock == nil and typeof(lot.stockQuantity) == "number" then
-			stock = lot.stockQuantity
-		end
-		return stock
-	end
-	local function isLotBuyable(lot, now)
-		if lot.soldOut == true then
-			return false
-		end
-		if lot.expired == true then
-			return false
-		end
-		local stock = resolveLotStockCount(lot)
-		local ae = getAuctioneer()
-		if ae and ae.IsActive and typeof(lot.expiresAt) == "number" then
-			local ok, active = pcall(ae.IsActive, lot, now, stock)
-			if ok then
-				return active == true
-			end
-		end
-		if typeof(lot.expiresAt) == "number" and lot.expiresAt <= now then
-			return false
-		end
-		if stock ~= nil and stock <= 0 then
-			return false
-		end
-		return true
-	end
-	local function getLotStockDisplay(lot, now)
-		local stock = resolveLotStockCount(lot)
-		if lot.soldOut == true or stock == 0 then
-			return "sold out"
-		end
-		if lot.expired == true or (typeof(lot.expiresAt) == "number" and lot.expiresAt <= now) then
-			return "expired"
-		end
-		if stock ~= nil and stock > 0 then
-			return formatAuctionStockCount(stock) .. " in stock"
-		end
-		if not isLotBuyable(lot, now) then
-			return "sold out"
-		end
-		return "in stock"
-	end
-	local function readAuctionGuiRow(frame)
-		local lotId = frame.Name:match("^Lot_(.+)$")
-		if not lotId then
-			return nil
-		end
-		local main = getAuctionRowMainFrame(frame)
-		if not main then
-			return nil
-		end
-		local displayName = findAuctionRowName(frame)
-		local buyButton = main:FindFirstChild("BuyButton")
-		local robuxButton = main:FindFirstChild("RobuxButton")
-		local guiPrice, robuxPrice = readAuctionGuiPrices(main)
-		local robuxVisible = robuxButton and robuxButton.Visible
-		local stockLabel = main:FindFirstChild("Stock_Text")
-		local stockText = stockLabel and stockLabel:IsA("TextLabel") and stockLabel.Text or ""
-		local outOfStock = main:FindFirstChild("OUT_OF_STOCK")
-		local expiredOverlay = main:FindFirstChild("EXPIRED")
-		local soldOut = (outOfStock and outOfStock.Visible) or string.lower(stockText) == "sold out"
-		local expired = expiredOverlay and expiredOverlay.Visible
-		local robuxOnly = false
-		local dualCurrency = false
-		local buyText = findAuctionButtonPriceText(buyButton)
-		if buyText and buyText ~= "" and not isAuctionCurrencyPriceText(buyText) and (not guiPrice or guiPrice <= 0) then
-			robuxOnly = true
-		end
-		if robuxVisible and robuxPrice and robuxPrice > 0 then
-			if guiPrice and guiPrice > 0 then
-				dualCurrency = true
-			elseif not robuxOnly then
-				robuxOnly = true
-			end
-		end
-		local stockCount = parseAuctionStockText(stockText)
-		if soldOut then
-			stockCount = 0
-		end
-		return {
-			lotId = lotId,
-			displayName = displayName or lotId,
-			item = displayName,
-			guiPrice = guiPrice,
-			startPrice = guiPrice,
-			robuxPrice = robuxPrice,
-			robuxOnly = robuxOnly,
-			dualCurrency = dualCurrency,
-			soldOut = soldOut,
-			expired = expired,
-			stockQuantity = stockCount,
-		}, stockCount
-	end
-	local function mergeAuctionLot(existing, incoming)
-		if not existing then
-			return incoming
-		end
-		for key, value in pairs(incoming) do
-			if value ~= nil then
-				if key == "startPrice" then
-					if typeof(value) == "number" and value > 0 then
-						existing[key] = value
-					end
-				elseif key == "guiPrice" or key == "robuxPrice" then
-					if typeof(value) == "number" and value > 0 then
-						existing[key] = value
-					end
-				elseif key == "displayName" or key == "item" then
-					if value ~= "" then
-						existing[key] = value
-					end
-				else
-					existing[key] = value
-				end
-			end
-		end
-		return existing
-	end
-	local function syncAuctionFromGui()
-		local playerGui = localPlayer:FindFirstChild("PlayerGui")
-		local auctionGui = playerGui and playerGui:FindFirstChild("Auction")
-		local scroll = auctionGui and auctionGui:FindFirstChild("Frame") and auctionGui.Frame:FindFirstChild("ScrollingFrame")
-		if not scroll then
-			return false
-		end
-		local lotsById = {}
-		for _, lot in auctionLots do
-			lotsById[lot.lotId] = lot
-		end
-		local found = 0
-		for _, child in scroll:GetChildren() do
-			if child:IsA("Frame") then
-				local lotData, stockCount = readAuctionGuiRow(child)
-				if lotData then
-					found = found + 1
-					local merged = mergeAuctionLot(lotsById[lotData.lotId], lotData)
-					lotsById[lotData.lotId] = merged
-					if stockCount ~= nil then
-						auctionStock[lotData.lotId] = stockCount
-					elseif lotData.soldOut then
-						auctionStock[lotData.lotId] = 0
-					end
-				end
-			end
-		end
-		if found == 0 then
-			return false
-		end
-		table.clear(auctionLots)
-		for _, lot in lotsById do
-			table.insert(auctionLots, lot)
-		end
-		auctionSnapshot = auctionSnapshot or { source = "gui" }
-		auctionSnapshot.stock = auctionStock
-		return true
-	end
-	local function fetchAuctionSnapshotFromGui()
-		if not syncAuctionFromGui() then
-			return false
-		end
-		return true
-	end
-	local auctionSnapshotListenerSetup = false
-	local function ensureAuctionListeners()
-		if auctionSnapshotListenerSetup then
-			return
-		end
-		local net = getGameNetworking()
-		if not net or not net.Auctioneer then
-			return
-		end
-		auctionSnapshotListenerSetup = true
-		if net.Auctioneer.Snapshot and net.Auctioneer.Snapshot.OnClientEvent then
-			net.Auctioneer.Snapshot.OnClientEvent:Connect(function(snap)
-				applyAuctionSnapshot(snap)
-			end)
-		end
-		if net.Auctioneer.StockUpdate and net.Auctioneer.StockUpdate.OnClientEvent then
-			net.Auctioneer.StockUpdate.OnClientEvent:Connect(function(update)
-				if typeof(update) == "table" and typeof(update.stock) == "table" then
-					for lotId, count in update.stock do
-						auctionStock[lotId] = count
-					end
-				end
-			end)
-		end
-	end
-	local function fetchAuctionSnapshot()
-		ensureAuctionListeners()
-		local net = getGameNetworking()
-		if net and net.Auctioneer and net.Auctioneer.RequestSnapshot then
-			local eventSnap = nil
-			local listener = nil
-			if net.Auctioneer.Snapshot and net.Auctioneer.Snapshot.OnClientEvent then
-				listener = net.Auctioneer.Snapshot.OnClientEvent:Connect(function(snap)
-					eventSnap = snap
-				end)
-			end
-			for _ = 1, 3 do
-				pcall(function()
-					net.Auctioneer.RequestSnapshot:Fire()
-				end)
-				if eventSnap and applyAuctionSnapshot(eventSnap) then
-					if listener then
-						listener:Disconnect()
-					end
-					syncAuctionFromGui()
-					return eventSnap
-				end
-				task.wait(0.25)
-			end
-			if listener then
-				listener:Disconnect()
-			end
-		end
-		if fetchAuctionSnapshotFromGui() then
-			return auctionSnapshot
-		end
-		return nil
-	end
-	local function buildLotOptions()
-		local now = auctionServerNow()
-		local labels = {}
-		table.clear(auctionLotByLabel)
-		for _, lot in auctionLots do
-			local stockDisplay = getLotStockDisplay(lot, now)
-			local label = string.format("%s — %s — %s", getLotDisplayName(lot), formatAuctionLotPrice(lot, now), stockDisplay)
-			labels[#labels + 1] = label
-			auctionLotByLabel[label] = lot
-		end
-		table.sort(labels)
-		return labels
-	end
-	local function formatAuctionListRichText()
-		local now = auctionServerNow()
-		local lines = { string.format('<font color="rgb(255,255,255)">%d lots</font>', #auctionLots) }
-		for _, lot in ipairs(auctionLots) do
-			local stockDisplay = getLotStockDisplay(lot, now)
-			local lotColor = getLotRarityColor(lot)
-			local timeLeft = lot.expiresAt and math.max(0, lot.expiresAt - now) or nil
-			local timeText = timeLeft and string.format(" · %ss", string.format("%.1f", timeLeft)) or ""
-			lines[#lines + 1] = string.format(
-				'<font color="%s">%s</font> — <font color="rgb(255,255,255)">%s</font> — <font color="rgb(255,255,255)">%s</font>%s',
-				lotColor,
-				getLotDisplayName(lot),
-				formatAuctionLotPrice(lot, now),
-				stockDisplay,
-				timeText
-			)
-		end
-		return table.concat(lines, "\n")
-	end
-	local auctionStatusRetryCount = 0
-	local function updateAuctionStatus()
-		if not auctionStatusParagraph then
-			auctionStatusRetryCount = auctionStatusRetryCount + 1
-			if auctionStatusRetryCount < 20 then
-				task.delay(0.25, updateAuctionStatus)
-			end
-			return
-		end
-		auctionStatusRetryCount = 0
-		local ok, content = pcall(function()
-			if #auctionLots == 0 then
-				return "No lots found. Open the in-game Auction shop once, then press Refresh."
-			end
-			return formatAuctionListRichText()
-		end)
-		if not ok then
-			warn("[Auction] Status update failed:", content)
-			setHubParagraph(auctionStatusParagraph, "Auction data error. Press Refresh.", "Auction")
-			return
-		end
-		setHubParagraph(auctionStatusParagraph, content, "Auction")
-	end
-	local function refreshAuctionUi()
-		local ok, err = pcall(function()
-			fetchAuctionSnapshot()
-			syncAuctionFromGui()
-			buildAuctionItemList()
-			local labels = buildLotOptions()
-			if auctionLotDropdown and auctionLotDropdown.SetOptions then
-				pcall(function()
-					auctionLotDropdown:SetOptions(labels)
-				end)
-			end
-			if labels[1] then
-				local lot = auctionLotByLabel[labels[1]]
-				auctionSelectedLotId = lot and lot.lotId or nil
-			else
-				auctionSelectedLotId = nil
-			end
-		end)
-		if not ok then
-			warn("[Auction] Refresh failed:", err)
-			if auctionStatusParagraph then
-				setHubParagraph(auctionStatusParagraph, "Auction refresh failed. Press Refresh again.", "Auction")
-			end
-			return
-		end
-		updateAuctionStatus()
-	end
-	local function findSelectedLot()
-		if auctionSelectedLotId then
-			for _, lot in auctionLots do
-				if lot.lotId == auctionSelectedLotId then
-					return lot
-				end
-			end
-		end
-		for _, lot in pairs(auctionLotByLabel) do
-			return lot
-		end
-		return nil
-	end
-	local function buyLot(lot, now)
-		if not lot or not isLotBuyable(lot, now) then
-			return false
-		end
-		local net = getGameNetworking()
-		if not net or not net.Auctioneer then
-			return false
-		end
-		if getLotPriceKind(lot) == "robux" then
-			if not net.Auctioneer.PrepareRobux then
-				return false
-			end
-			pcall(function()
-				net.Auctioneer.PrepareRobux:Fire(lot.lotId)
-			end)
-			return true
-		end
-		if not net.Auctioneer.PurchaseLot then
-			return false
-		end
-		local price = getLotPrice(lot, now)
-		if auctionMinPrice > 0 and price < auctionMinPrice then
-			return false
-		end
-		if auctionMaxPrice > 0 and price > auctionMaxPrice then
-			return false
-		end
-		pcall(function()
-			net.Auctioneer.PurchaseLot:Fire(lot.lotId, price)
-		end)
-		return true
-	end
-	local function buySelectedLot()
-		local lot = findSelectedLot()
-		if not lot then
-			hub:Notify("No lot selected.")
-			return
-		end
-		local now = auctionServerNow()
-		if not isLotBuyable(lot, now) then
-			hub:Notify("This lot is sold out.")
-			return
-		end
-		if buyLot(lot, now) then
-			hub:Notify(string.format("Buy sent: %s (%s)", getLotDisplayName(lot), formatAuctionLotPrice(lot, now)))
-			task.delay(0.6, refreshAuctionUi)
-		else
-			hub:Notify("Auction remote not found.")
-		end
-	end
-	local function lotMatchesAutoBuy(lot)
-		if auctionBuyFilter == "" or auctionBuyFilter == "None" then
-			return false
-		end
-		local label = getLotDisplayName(lot)
-		for entry in (auctionBuyFilter .. ","):gmatch("([^,]+),") do
-			entry = entry:match("^%s*(.-)%s*$")
-			if entry ~= "" and (label == entry or label:find(entry, 1, true)) then
-				return true
-			end
-		end
-		return false
-	end
-	local function runAuctionAutoBuyLoop()
-		task.spawn(function()
-			while auctionAutoBuy do
-				local now = auctionServerNow()
-				for _, lot in ipairs(auctionLots) do
-					if not auctionAutoBuy then
-						break
-					end
-					if lotMatchesAutoBuy(lot) and isLotBuyable(lot, now) and getLotPriceKind(lot) ~= "robux" then
-						local price = getLotPrice(lot, now)
-						local withinBudget = (auctionMinPrice <= 0 or price >= auctionMinPrice)
-							and (auctionMaxPrice <= 0 or price <= auctionMaxPrice)
-						local timeLeft = lot.expiresAt and (lot.expiresAt - now) or math.huge
-						local shouldBuy = withinBudget and ((not auctionSnipeMode) or timeLeft <= auctionSnipeSeconds)
-						if shouldBuy then
-							if buyLot(lot, now) then
-								hub:Notify(string.format("Auto buy: %s (%s)", getLotDisplayName(lot), formatAuctionLotPrice(lot, now)))
-								task.wait(0.35)
-							end
-						end
-					end
-				end
-				task.wait(0.1)
-			end
-		end)
-	end
-	task.defer(function()
-		local net = getGameNetworking()
-		if not net or not net.Auctioneer then
-			return
-		end
-		if net.Auctioneer.Snapshot and net.Auctioneer.Snapshot.OnClientEvent then
-			net.Auctioneer.Snapshot.OnClientEvent:Connect(function(snap)
-				if applyAuctionSnapshot(snap) then
-					syncAuctionFromGui()
-					buildAuctionItemList()
-					local labels = buildLotOptions()
-					if auctionLotDropdown and auctionLotDropdown.SetOptions then
-						pcall(function()
-							auctionLotDropdown:SetOptions(labels)
-						end)
-					end
-					updateAuctionStatus()
-				end
-			end)
-		end
-		if net.Auctioneer.StockUpdate and net.Auctioneer.StockUpdate.OnClientEvent then
-			net.Auctioneer.StockUpdate.OnClientEvent:Connect(function(update)
-				if typeof(update) == "table" and typeof(update.stock) == "table" then
-					auctionStock = update.stock
-					syncAuctionFromGui()
-					updateAuctionStatus()
-				end
-			end)
-		end
-		if net.Auctioneer.PurchaseResult and net.Auctioneer.PurchaseResult.OnClientEvent then
-			net.Auctioneer.PurchaseResult.OnClientEvent:Connect(function(lotId, success, reason)
 				if success then
-					hub:Notify("Auction buy success.")
-				elseif reason and reason ~= "" then
-					hub:Notify("Auction buy failed: " .. tostring(reason))
+					local Hue, Saturation, Value = result:ToHSV()
+					colorpicker.HueValues.HEX.V.HEXBox.Text = ''
+					if Saturation > 0.02 then
+						HSV[1] = Hue
+					end
+					HSV[2] = Saturation
+					HSV[3] = Value
+					updatestuff()
+				else
+					warn("Failed to convert hex to color:", result)
 				end
-				task.defer(refreshAuctionUi)
 			end)
-		end
-	end)
-	hub:CreateTab("Auction", "rbxassetid://16000149927")
-	hub:CreateModule("Auction", {
-		name = "Auction Shop",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		desc = "View and buy auction lots.",
-		callback = function() end,
-		opts = {
-			{type = "paragraph", title = "Auction", content = "Loading...", onCreate = function(widget)
-				auctionStatusParagraph = widget
-				enableParagraphRichText(widget)
-				pcall(refreshAuctionUi)
-			end},
-			{type = "button", label = "Refresh Lots", callback = refreshAuctionUi},
-			{type = "dropdown", label = "Select Lot", value = nil, list = {}, callback = function(value)
-				local lot = auctionLotByLabel[value]
-				auctionSelectedLotId = lot and lot.lotId or nil
-			end, onCreate = function(widget)
-				auctionLotDropdown = widget
-			end},
-			{type = "button", label = "Buy Selected", callback = buySelectedLot},
-		}
-	})
-	hub:CreateModule("Auction", {
-		name = "Auto Buy",
-		on = false,
-		bind = "None",
-		desc = "Auto buy selected auction items within price range.",
-		callback = function(enabled)
-			auctionAutoBuy = enabled
-			if enabled then
-				if auctionBuyFilter == "" or auctionBuyFilter == "None" then
-					hub:Notify("Select items to buy first.")
-					auctionAutoBuy = false
-					return
+
+
+			colorpicker.HueValues.RGB.V.RGBBox.FocusLost:Connect(function(Enter)
+				if not Enter then return end
+
+				local rgbInput = colorpicker.HueValues.RGB.V.RGBBox.Text
+
+				local r, g, b = rgbInput:match("^(%d+),%s*(%d+),%s*(%d+)$")
+
+				if r and g and b then
+
+					r, g, b = tonumber(r), tonumber(g), tonumber(b)
+
+					if r >= 0 and r <= 255 and g >= 0 and g <= 255 and b >= 0 and b <= 255 then
+						local color = Color3.fromRGB(r, g, b)
+
+						local Hue, Saturation, Value = color:ToHSV()
+						if Saturation > 0.02 then
+							HSV[1] = Hue
+						end
+						HSV[2] = Saturation
+						HSV[3] = Value
+
+						colorpicker.HueValues.RGB.V.RGBBox.Text = ''
+						updatestuff()
+					else
+						warn("RGB values must be between 0 and 255.")
+					end
+				else
+					warn("Invalid RGB format. Please use the format 'R,G,B' (e.g., 16,16,16).")
 				end
-				runAuctionAutoBuyLoop()
+			end)
+
+			local UserInputService = game:GetService("UserInputService")
+			local TweenService = game:GetService("TweenService")
+			local RunService = game:GetService("RunService")
+
+			local linkDragging = false
+			local originalPosition = UDim2.new(0.5, 0,0, 0)
+			local draggedColorPicker = nil
+
+			local function isMouseOver(guiObject)
+				local mouse = game.Players.LocalPlayer:GetMouse()
+				local pos = guiObject.AbsolutePosition
+				local size = guiObject.AbsoluteSize
+				return mouse.X >= pos.X and mouse.X <= pos.X + size.X and mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y
 			end
-		end,
-		opts = {
-			{type = "textbox", label = "Min Price", value = "0", placeholder = "0 = no minimum (e.g. 500K, 1M)", callback = function(value)
-				auctionMinPrice = parseAuctionMoneyInput(value or "0")
-			end},
-			{type = "textbox", label = "Max Price", value = "0", placeholder = "0 = no maximum (e.g. 2M, 5M)", callback = function(value)
-				auctionMaxPrice = parseAuctionMoneyInput(value or "0")
-			end},
-			{type = "multiselect", label = "What To Buy", value = "None", list = auctionItemList, callback = function(value)
-				auctionBuyFilter = value or ""
-			end, onCreate = function(widget)
-				auctionBuyItemsWidget = widget
-				pcall(refreshGameLists)
-				buildAuctionItemList()
-				if widget.SetOptions then
-					pcall(function()
-						widget:SetOptions(auctionItemList)
-					end)
-				end
-			end},
-			{type = "paragraph", title = "Lowest Price", content = "Auction price drops while the lot timer runs. Enable wait mode to buy near the end instead of immediately."},
-			{type = "checkbox", label = "Wait For Lowest Price", value = false, callback = function(value)
-				auctionSnipeMode = value
-			end},
-			{type = "textbox", label = "Lot Timer Left (seconds)", value = "5", numberOnly = true, placeholder = "Seconds left on lot timer (0-30). 0 = buy when timer hits zero.", callback = function(value)
-				auctionSnipeSeconds = parseAuctionTimerSeconds(value or "5")
-			end},
-		}
-	})
-	table.insert(hubStore.paragraphBootstraps, refreshAuctionUi)
-end)()
-hub:CreateModule("Misc", {
-	name = "Rollback",
-	on = false,
-	bind = "None",
-	desc = "Block saves after enable. Rejoin to restore old progress.",
-	callback = function(enabled)
-		setRollbackActive(enabled)
-	end,
-	opts = {
-		{type = "button", label = "Rejoin Now", callback = rejoinServer},
-	}
-})
-local function buildPetsFinderTab(parentFrame)
-	local msg = Instance.new("TextLabel")
-	msg.Size = UDim2.new(1, -20, 1, -20)
-	msg.Position = UDim2.new(0, 10, 0, 10)
-	msg.BackgroundTransparency = 1
-	msg.Text = "These features are temporarily removed."
-	msg.TextColor3 = Color3.fromRGB(180, 180, 190)
-	msg.TextSize = 14
-	msg.Font = Enum.Font.MontserratBold
-	msg.TextWrapped = true
-	msg.TextXAlignment = Enum.TextXAlignment.Left
-	msg.TextYAlignment = Enum.TextYAlignment.Top
-	msg.Parent = parentFrame
-end
-hub:CreateTab("Pet Finder", "rbxassetid://13001190533", buildPetsFinderTab)
-hub:CreateModule("Pet Finder", {
-	name = "Wild Pets Scanner",
-	notoggle = true,
-	on = false,
-	bind = "None",
-	desc = "Temporarily removed.",
-	callback = function() end,
-	opts = {}
-})
-hub:CreateModule("Settings", {
-	name = "Worlds",
-	notoggle = true,
-	on = false,
-	bind = "None",
-	callback = function() end,
-	opts = {
-		{type = "paragraph", title = "Current World", content = getWorldDisplayName() .. " · " .. getCurrencyName() .. " (" .. getCurrencySuffix() .. ")"},
-		{type = "button", label = "Teleport to Garden Valley", callback = function()
-			teleportToWorld("Main")
-		end},
-		{type = "button", label = "Teleport to Fall Harvest", callback = function()
-			teleportToWorld("FallHarvest")
-		end},
-	}
-})
-hub:CreateModule("Settings", {
-	name = "Server Utilities",
-	notoggle = true,
-	on = false,
-	bind = "None",
-	desc = "Rejoin or hop servers.",
-	callback = function() end,
-	opts = {
-		{type = "button", label = "Rejoin Current Server", callback = function()
-			rejoinServer()
-		end},
-		{type = "button", label = "Hop to Public Server", callback = function()
-			serverHop()
-		end},
-		{type = "textbox", label = "Connect to Job ID", value = "", placeholder = "Enter Job ID...", callback = function(val)
-			jobidInput = val
-		end},
-		{type = "button", label = "Connect by Job ID", callback = function()
-			joinJobId()
-		end}
-	}
-})
-;(function()
-	local infoParagraph = nil
-	local infoThread = nil
-	local cachedFps = 60
-	local fpsAccum, fpsFrames = 0, 0
-	RS.RenderStepped:Connect(function(dt)
-		fpsAccum = fpsAccum + dt
-		fpsFrames = fpsFrames + 1
-		if fpsAccum >= 0.5 then
-			cachedFps = math.floor(fpsFrames / fpsAccum)
-			fpsAccum, fpsFrames = 0, 0
-		end
-	end)
 
-	local function formatInfoMoney(n)
-		n = tonumber(n) or 0
-		if n >= 1000000000 then
-			return string.format("%.2fB", n / 1000000000)
-		elseif n >= 1000000 then
-			return string.format("%.2fM", n / 1000000)
-		elseif n >= 1000 then
-			return string.format("%.2fK", n / 1000)
-		end
-		return tostring(math.floor(n))
-	end
+			colorpicker.HueValues.Link.Frame.interact.MouseButton1Down:Connect(function()
+				linkDragging = true
+				draggedColorPicker = colorpicker
 
-	local function formatFruitStat(entry)
-		if not entry then
-			return "None"
-		end
-		return string.format("%s · %.2fkg · %s", entry.seedName, entry.weight, formatCurrencyAmount(entry.price, true))
-	end
+				TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(0, 40,1, 0)}):Play()
 
-	local function getWalletBalanceText()
-		return tostring(getPlayerCurrency())
-	end
+				local followMouse
+				followMouse = RunService.RenderStepped:Connect(function()
+					if not linkDragging then
+						followMouse:Disconnect()
+						return
+					end
+					local mouse = game.Players.LocalPlayer:GetMouse()
+					-- colorpicker.HueValues.Link.Frame.Position = UDim2.new(0, mouse.X - colorpicker.AbsolutePosition.X - 50, 0, mouse.Y - colorpicker.AbsolutePosition.Y - 260)
+					TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(0, mouse.X - colorpicker.AbsolutePosition.X - 50, 0, mouse.Y - colorpicker.AbsolutePosition.Y - 260) }):Play()
 
-	local function buildInfoText()
-		local ping = 0
-		pcall(function()
-			ping = math.floor(localPlayer:GetNetworkPing() * 1000 + 0.5)
-		end)
-		local timeLabel, timeColor = getTimeOfDayInfo()
-		local serverBestPrice, serverBestWeight = nil, nil
-		pcall(function()
-			serverBestPrice, serverBestWeight = scanServerFruitStats(true)
-		end)
-		local myBestPrice, myBestWeight = nil, nil
-		pcall(function()
-			local farm = getPlayerFarm()
-			if farm then
-				myBestPrice, myBestWeight = scanGardenFruitStats(farm, true)
-			end
-		end)
-		local session = formatSessionTime(os.clock() - scriptSessionStart)
-		local serverAge = formatSessionTime(workspace.DistributedGameTime)
-		return table.concat({
-			string.format('<font color="rgb(255,255,255)">Username:</font> %s', predictWhite(localPlayer.Name)),
-			string.format('<font color="rgb(200,200,210)">Display:</font> %s', predictWhite(localPlayer.DisplayName)),
-			string.format('<font color="rgb(120,200,255)">World:</font> %s', predictWhite(getWorldDisplayName())),
-			string.format('<font color="rgb(255,220,90)">%s:</font> %s', getCurrencyName(), predictWhite(getWalletBalanceText())),
-			string.format('<font color="rgb(120,200,255)">FPS:</font> %s   <font color="rgb(120,200,255)">Ping:</font> %s', predictWhite(cachedFps), predictWhite(ping .. "ms")),
-			string.format('<font color="rgb(200,200,210)">Account Age:</font> %s', predictWhite(string.format("%d days", localPlayer.AccountAge or 0))),
-			string.format('<font color="rgb(200,200,210)">Job ID:</font> %s', predictWhite(game.JobId)),
-			string.format('<font color="rgb(200,200,210)">Server Age:</font> %s', predictWhite(serverAge)),
-			string.format('<font color="rgb(200,200,210)">Session:</font> %s', predictWhite(session)),
-			string.format('<font color="%s">Time:</font> %s', timeColor, predictWhite(timeLabel)),
-			"",
-			string.format('<font color="rgb(110,255,140)">Best Fruit In Server:</font> %s', predictWhite(formatFruitStat(serverBestPrice))),
-			string.format('<font color="rgb(255,200,120)">Biggest Fruit In Server:</font> %s', predictWhite(formatFruitStat(serverBestWeight))),
-			string.format('<font color="rgb(110,255,140)">Best Fruit In Your Garden:</font> %s', predictWhite(formatFruitStat(myBestPrice))),
-			string.format('<font color="rgb(255,200,120)">Biggest Fruit In Your Garden:</font> %s', predictWhite(formatFruitStat(myBestWeight))),
-			"",
-			'<font color="rgb(140,140,150)">Executor:</font> ' .. predictWhite(executor),
-		}, "\n")
-	end
-
-	local function refreshInfoParagraph()
-		if not infoParagraph then
-			return
-		end
-		local ok, textOrErr = pcall(buildInfoText)
-		if ok then
-			setHubParagraph(infoParagraph, textOrErr, "Live Info")
-		else
-			setHubParagraph(infoParagraph, "Error loading info:\n" .. tostring(textOrErr), "Live Info")
-		end
-	end
-
-	local function startInfoLoop()
-		if infoThread then
-			return
-		end
-		infoThread = task.spawn(function()
-			while infoParagraph do
-				refreshInfoParagraph()
-				task.wait(1)
-			end
-			infoThread = nil
-		end)
-	end
-
-	hub:CreateModule("Settings", {
-		name = "Info",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		desc = "Account and server info.",
-		callback = function() end,
-		opts = {
-			{type = "paragraph", title = "Live Info", content = "Loading...", onCreate = function(widget)
-				infoParagraph = widget
-				enableParagraphRichText(widget)
-			end},
-		}
-	})
-	table.insert(hubStore.paragraphBootstraps, function()
-		refreshInfoParagraph()
-		startInfoLoop()
-	end)
-end)()
-;(function()
-	local hideForeignPlants = false
-	local hiddenPlantState = {}
-	local hidePlantConnections = {}
-
-	local function isMyGardenPlot(plot)
-		local farm = getPlayerFarm()
-		return farm ~= nil and plot == farm
-	end
-
-	local function rememberPartState(part)
-		if hiddenPlantState[part] then
-			return
-		end
-		hiddenPlantState[part] = {
-			localTransparencyModifier = part.LocalTransparencyModifier,
-			canCollide = part.CanCollide,
-			castShadow = part.CastShadow,
-		}
-	end
-
-	local function hideDescendant(inst)
-		if inst:IsA("BasePart") then
-			rememberPartState(inst)
-			inst.LocalTransparencyModifier = 1
-			inst.CanCollide = false
-			inst.CastShadow = false
-		elseif inst:IsA("Decal") or inst:IsA("Texture") then
-			if not hiddenPlantState[inst] then
-				hiddenPlantState[inst] = {transparency = inst.Transparency}
-			end
-			inst.Transparency = 1
-		elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") then
-			if not hiddenPlantState[inst] then
-				hiddenPlantState[inst] = {enabled = inst.Enabled}
-			end
-			inst.Enabled = false
-		elseif inst:IsA("ProximityPrompt") then
-			if not hiddenPlantState[inst] then
-				hiddenPlantState[inst] = {enabled = inst.Enabled}
-			end
-			inst.Enabled = false
-		end
-	end
-
-	local function hidePlantModel(plant)
-		for _, desc in plant:GetDescendants() do
-			hideDescendant(desc)
-		end
-		hideDescendant(plant)
-	end
-
-	local function restoreHidden(inst)
-		local state = hiddenPlantState[inst]
-		if not state or not inst.Parent then
-			hiddenPlantState[inst] = nil
-			return
-		end
-		if inst:IsA("BasePart") then
-			inst.LocalTransparencyModifier = state.localTransparencyModifier or 0
-			inst.CanCollide = state.canCollide ~= false
-			if state.castShadow ~= nil then
-				inst.CastShadow = state.castShadow
-			end
-		elseif inst:IsA("Decal") or inst:IsA("Texture") then
-			inst.Transparency = state.transparency or 0
-		elseif inst:IsA("BillboardGui") or inst:IsA("SurfaceGui") or inst:IsA("ProximityPrompt") then
-			inst.Enabled = state.enabled ~= false
-		end
-		hiddenPlantState[inst] = nil
-	end
-
-	local function restoreAllHiddenPlants()
-		for inst in hiddenPlantState do
-			restoreHidden(inst)
-		end
-		table.clear(hiddenPlantState)
-	end
-
-	local function hidePlotPlants(plot)
-		if isMyGardenPlot(plot) then
-			return
-		end
-		local plants = plot:FindFirstChild("Plants")
-		if not plants then
-			return
-		end
-		local count = 0
-		for _, plant in plants:GetChildren() do
-			if not hideForeignPlants then
-				return
-			end
-			hidePlantModel(plant)
-			count = count + 1
-			if count % 30 == 0 then
-				task.wait()
-			end
-		end
-	end
-
-	local function hideAllForeignPlants()
-		task.spawn(function()
-			local gardens = workspace:FindFirstChild("Gardens")
-			if not gardens then
-				return
-			end
-			for _, plot in gardens:GetChildren() do
-				if hideForeignPlants then
-					hidePlotPlants(plot)
-				end
-			end
-		end)
-	end
-
-	local function bindPlotListeners(plot)
-		if hidePlantConnections[plot] then
-			return
-		end
-		local plants = plot:FindFirstChild("Plants")
-		if not plants then
-			return
-		end
-		hidePlantConnections[plot] = plants.ChildAdded:Connect(function(plant)
-			if hideForeignPlants and not isMyGardenPlot(plot) then
-				task.defer(function()
-					if hideForeignPlants then
-						hidePlantModel(plant)
+					for _, otherPicker in pairs(Page:GetChildren()) do
+						if otherPicker:IsA("Frame") and otherPicker:FindFirstChild("isLinkable") and otherPicker.isLinkable.Value then
+							if isMouseOver(otherPicker) and otherPicker ~= draggedColorPicker then
+								TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
+							else
+								TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+							end
+						end
 					end
 				end)
-			end
-		end)
-	end
-
-	local function connectHideForeignPlants()
-		local gardens = workspace:FindFirstChild("Gardens")
-		if not gardens then
-			return
-		end
-		if not hidePlantConnections._gardens then
-			hidePlantConnections._gardens = gardens.ChildAdded:Connect(function(plot)
-				if hideForeignPlants then
-					task.defer(function()
-						hidePlotPlants(plot)
-						bindPlotListeners(plot)
-					end)
-				end
 			end)
-		end
-		for _, plot in gardens:GetChildren() do
-			bindPlotListeners(plot)
-		end
-	end
 
-	local function disconnectHideForeignPlants()
-		for key, conn in hidePlantConnections do
-			if conn and conn.Connected then
-				conn:Disconnect()
-			end
-			hidePlantConnections[key] = nil
-		end
-	end
+			UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 and linkDragging then
+					linkDragging = false
+					local foundTarget = false
 
-	local function setHideForeignPlants(enabled)
-		hideForeignPlants = enabled
-		if enabled then
-			connectHideForeignPlants()
-			hideAllForeignPlants()
-		else
-			disconnectHideForeignPlants()
-			restoreAllHiddenPlants()
-		end
-	end
+					for _, otherPicker in pairs(Page:GetChildren()) do
+						if otherPicker:IsA("Frame") and otherPicker:FindFirstChild("isLinkable") and otherPicker.isLinkable.Value then
+							if isMouseOver(otherPicker) and otherPicker ~= draggedColorPicker then
+								otherPicker.HueSat.Value = draggedColorPicker.HueSat.Value
+								updatestuff() 
+								foundTarget = true
+								syde:Toast({
+									Content = 'Color Linked',
+									Duration = 2,
+								})
+								TweenService:Create(
+									colorpicker.HueValues.Link.Frame,
+									TweenInfo.new(0.3, Enum.EasingStyle.Quint),
+									{ Position = originalPosition }
+								):Play()
 
-	local screenCover = nil
-	local whiteScreen = false
-	local blackScreen = false
-	local origDecals = {}
-	local origEffects = {}
-	local function updateScreenCover()
-		if screenCover then
-			screenCover:Destroy()
-			screenCover = nil
-		end
-		local runService = game:GetService("RunService")
-		local playerGui = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")
-		if whiteScreen or blackScreen then
-			screenCover = Instance.new("ScreenGui")
-			screenCover.Name = "PerformanceCover"
-			screenCover.DisplayOrder = -99999
-			screenCover.IgnoreGuiInset = true
-			screenCover.Parent = playerGui
-			local frame = Instance.new("Frame")
-			frame.Size = UDim2.new(1, 0, 1, 0)
-			frame.BackgroundColor3 = whiteScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(0, 0, 0)
-			frame.BorderSizePixel = 0
-			frame.Active = true
-			frame.Parent = screenCover
-			if runService.Set3dRenderingEnabled then
-				pcall(function() runService:Set3dRenderingEnabled(false) end)
-			end
-		else
-			if runService.Set3dRenderingEnabled then
-				pcall(function() runService:Set3dRenderingEnabled(true) end)
-			end
-		end
-	end
-	local origFog = {}
-	hub:CreateModule("Settings", {
-		name = "Performance",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		desc = "FPS boost.",
-		callback = function() end,
-		opts = {
-			{type = "toggle", label = "Hide Other Gardens", value = false, callback = function(val)
-				setHideForeignPlants(val)
-			end},
-			{type = "toggle", label = "No Fog", value = false, callback = function(val)
-				if val then
-					origFog.FogEnd = game:GetService("Lighting").FogEnd
-					origFog.FogStart = game:GetService("Lighting").FogStart
-					game:GetService("Lighting").FogEnd = 999999
-					game:GetService("Lighting").FogStart = 999998
-					local atm = game:GetService("Lighting"):FindFirstChildOfClass("Atmosphere")
-					if atm then
-						origFog.Density = atm.Density
-						atm.Density = 0
-					end
-				else
-					if origFog.FogEnd then
-						game:GetService("Lighting").FogEnd = origFog.FogEnd
-						game:GetService("Lighting").FogStart = origFog.FogStart
-					end
-					local atm = game:GetService("Lighting"):FindFirstChildOfClass("Atmosphere")
-					if atm and origFog.Density then
-						atm.Density = origFog.Density
-					end
-				end
-			end},
-			{type = "toggle", label = "Boost FPS", value = false, callback = function(val)
-				if val then
-					table.clear(origDecals)
-					local count = 0
-					for _, v in workspace:GetDescendants() do
-						if v:IsA("Decal") or v:IsA("Texture") then
-							local ok, err = pcall(function()
-								origDecals[v] = v.Transparency
-								v.Transparency = 1
-							end)
-							if ok then count = count + 1 end
-						end
-					end
-					pcall(function()
-						originalQuality = settings().Rendering.QualityLevel
-						settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-					end)
-				else
-					local count = 0
-					local errors = 0
-					for v, trans in pairs(origDecals) do
-						local ok, err = pcall(function()
-							if v and v.Parent then
-								v.Transparency = trans
-								count = count + 1
+								TweenService:Create(otherPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
+								--	TweenService:Create(colorpicker.HueValues.HEX.Link, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {ImageColor3 = Color3.fromRGB(66, 66, 66)}):Play()
+								TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(1, 0,1, 0)}):Play()
+								break
 							end
-						end)
-						if not ok then errors = errors + 1 end
+						end
 					end
-					table.clear(origDecals)
-					pcall(function()
-						if originalQuality then
-							settings().Rendering.QualityLevel = originalQuality
-						else
-							settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
-						end
-					end)
+
+					if not foundTarget then
+						--	TweenService:Create(colorpicker.HueValues.HEX.Link, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {ImageColor3 = Color3.fromRGB(66, 66, 66)}):Play()
+						TweenService:Create(colorpicker.HueValues.Link.Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential) , {Size = UDim2.new(1, 0,1, 0)}):Play()
+						TweenService:Create(
+							colorpicker.HueValues.Link.Frame,
+							TweenInfo.new(0.3, Enum.EasingStyle.Quint),
+							{ Position = originalPosition }
+						):Play()
+					end
 				end
-			end},
-			{type = "toggle", label = "Low Graphic", value = false, callback = function(val)
-				if val then
-					table.clear(origEffects)
-					local count = 0
-					for _, v in workspace:GetDescendants() do
-						if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("PostEffect") then
-							local ok, err = pcall(function()
-								origEffects[v] = v.Enabled
-								v.Enabled = false
-							end)
-							if ok then count = count + 1 end
-						end
+			end) 
+
+			local function updateColorPicker()
+				local Hue, Saturation, Value = HueSat.Value:ToHSV()
+
+				if Saturation > 0.02 then
+					HSV[1] = Hue
+				end
+				HSV[2] = Saturation
+				HSV[3] = Value
+
+				updatestuff()
+			end
+
+			HueSat.Changed:Connect(updateColorPicker)
+
+			local hueIncrement = 0.005 
+
+			local function RainbowEffect()
+				HueValue = (HueValue + hueIncrement) % 1
+				HSV[1] = HueValue
+
+				updatestuff()
+			end
+
+			local isRainbowEnabled = false
+			local huerender = nil
+
+			local function ToggleRainbowEffect()
+				isRainbowEnabled = not isRainbowEnabled
+				if isRainbowEnabled then
+					if not huerender then
+						huerender = runservice.RenderStepped:Connect(RainbowEffect)
+						tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential ), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
 					end
 				else
-					local count = 0
-					local errors = 0
-					for v, enabled in pairs(origEffects) do
-						local ok, err = pcall(function()
-							if v and v.Parent then
-								v.Enabled = enabled
-								count = count + 1
-							end
-						end)
-						if not ok then errors = errors + 1 end
+					if huerender then
+						huerender:Disconnect()
+						tweenservice:Create(colorpicker.color.Values.Rainbow, TweenInfo.new(0.5, Enum.EasingStyle.Exponential ), {ImageColor3 = Color3.fromRGB(62, 62, 62)}):Play()
+						huerender = nil
 					end
-					table.clear(origEffects)
 				end
-			end},
-			{type = "toggle", label = "Unlock FPS", value = false, callback = function(val)
-				local setfps = setfpscap or (syn and syn.set_fps_cap)
-				if setfps then
-					pcall(setfps, val and 999 or 60)
+			end
+
+			colorpicker.color.Values.Rainbow.MouseButton1Click:Connect(ToggleRainbowEffect)
+
+			function data:Set(RGBColor, skipSave)
+				if typeof(RGBColor) ~= "Color3" then return end
+
+				data.Color = RGBColor
+				local h, s, v = RGBColor:ToHSV()
+				HSV[1], HSV[2], HSV[3] = h, s, v
+
+				updatestuff()
+			end
+
+			if syde.ConfigEnabled and data.Flag then
+				syde.Flags[data.Flag] = data
+				if syde.LoadedConfig and syde.LoadedConfig[data.Flag] ~= nil then
+					local saved = syde.LoadedConfig[data.Flag]
+					local unpacked = syde:ColorUnpack(saved)
+					if typeof(unpacked) == "Color3" then
+						data:Set(unpacked, true)
+					end
 				end
-			end},
-			{type = "toggle", label = "White Screen", value = false, callback = function(val)
-				whiteScreen = val
-				if val and blackScreen then
-					blackScreen = false
-				end
-				updateScreenCover()
-			end},
-			{type = "toggle", label = "Black Screen", value = false, callback = function(val)
-				blackScreen = val
-				if val and whiteScreen then
-					whiteScreen = false
-				end
-				updateScreenCover()
-			end}
-		}
-	})
-end)()
-;(function()
-	local HttpService = game:GetService("HttpService")
-	local webhookUrls = {}
-	local webhookUrlParagraph = nil
-	local webhookGardenEnabled = false
-	local webhookGardenMinWeight = 0
-	local webhookGardenMaxWeight = 0
-	local webhookGardenMinPrice = 0
-	local webhookGardenMaxPrice = 0
-	local webhookGardenMutations = ""
-	local webhookGardenFruits = ""
-	local webhookGardenFruitType = "Whitelist"
-	local webhookGardenMutationType = "Whitelist"
-	local webhookMoonEnabled = false
-	local webhookPhaseEnabled = false
-	local webhookStockSeeds = false
-	local webhookStockGears = false
-	local webhookStockCrates = false
-	local webhookStockFilter = ""
-	local webhookStockFilterType = "Whitelist"
-	local webhookPetsEnabled = false
-	local webhookPetFilter = ""
-	local webhookPetFilterType = "Whitelist"
-	local webhookPetRarities = ""
-	local webhookPetRarityType = "Whitelist"
-	local webhookPetMutations = ""
-	local webhookPetMutationType = "Whitelist"
-	local webhookStealEnabled = false
-	local webhookWeatherEnabled = false
-	local webhookState = {
-		garden = {},
-		stock = {},
-		pets = {},
-		weather = {},
-		moonPhase = nil,
-		moonName = nil,
-	}
-	local webhookThread = nil
-	local webhookBootstrapped = false
+			end
 
-	local function parseWebhookMoneyInput(text)
-		if typeof(text) ~= "string" then
-			return 0
-		end
-		local trimmed = text:match("^%s*(.-)%s*$")
-		if trimmed == "" or trimmed == "0" then
-			return 0
-		end
-		local cleaned = trimmed:gsub("\194\162", ""):gsub("¢", ""):gsub(",", ""):gsub("%s+", "")
-		local numberPart, suffix = cleaned:match("^([%d%.]+)([KMBkmb]?)$")
-		local amount = tonumber(numberPart) or 0
-		local mult = ({ K = 1e3, M = 1e6, B = 1e9 })[string.upper(suffix or "")] or 1
-		return math.floor(amount * mult)
-	end
 
-	local function maskWebhookUrl(url)
-		local id, token = url:match("^https://discord%.com/api/webhooks/(%d+)/([%w_-]+)$")
-		if not id or not token then
-			return url
-		end
-		if #token <= 8 then
-			return string.format("https://discord.com/api/webhooks/%s/%s", id, token)
-		end
-		return string.format("https://discord.com/api/webhooks/%s/%s...%s", id, token:sub(1, 4), token:sub(-4))
-	end
 
-	local WEBHOOK_HUB_NAME = "Casual Hub"
+			return data
 
-	local function getWebhookTimestamp()
-		local ok, timestamp = pcall(function()
-			return DateTime.now():ToIsoDate()
-		end)
-		if ok and timestamp then
-			return timestamp
 		end
-		return os.date("!%Y-%m-%dT%H:%M:%SZ")
-	end
 
-	local function getWebhookFooterText()
-		local worldName = "Unknown"
-		pcall(function()
-			worldName = getWorldDisplayName()
-		end)
-		return WEBHOOK_HUB_NAME .. " · " .. worldName .. " · " .. localPlayer.Name
-	end
-
-	local function resolveHttpRequest()
-		if typeof(http_request) == "function" then
-			return http_request
-		end
-		if typeof(request) == "function" then
-			return request
-		end
-		if typeof(HttpPost) == "function" then
-			return function(options)
-				local url = options.Url or options.url
-				local body = options.Body or options.body
-				local method = options.Method or options.method or "POST"
-				local headers = options.Headers or options.headers
-				return HttpPost(url, body, method, headers)
+		-- guard every builder so a failed element shows the banner instead of breaking the UI
+		for _bn, _bf in pairs(initelement) do
+			if type(_bf) == "function" then
+				initelement[_bn] = syde:Guard("Building a '" .. tostring(_bn) .. "' element", _bf)
 			end
 		end
-		if syn and typeof(syn.request) == "function" then
-			return syn.request
-		end
-		if http and typeof(http.request) == "function" then
-			return http.request
-		end
-		return nil
-	end
 
-	local function normalizeDiscordWebhookUrl(url)
-		if typeof(url) ~= "string" then
+		return initelement
+
+
+	end
+	return tbdata
+
+
+end
+
+function syde.setHubParagraph(widget, content, title)
+	if not widget or not widget.Set then
+		return
+	end
+	pcall(function()
+		widget:Set(content or "", title)
+	end)
+end
+
+function syde.enableParagraphRichText(widget)
+	if not widget then
+		return
+	end
+	pcall(function()
+		local contentLabel = widget.ContentLabel
+		if contentLabel then
+			contentLabel.RichText = true
+		end
+	end)
+end
+
+function syde:CreateHub(config)
+	config = config or {}
+	local brand = config.brand or {}
+	local hubStore = config.hubStore or {}
+	hubStore.Modules = hubStore.Modules or {}
+	hubStore.paragraphBootstraps = hubStore.paragraphBootstraps or {}
+	hubStore.ToggleKey = hubStore.ToggleKey or Enum.KeyCode.RightShift
+	local getGuiRoot = config.getGuiRoot
+	local _pendingTabs = {}
+	local _pendingOrder = {}
+	local _sydeWindow = nil
+	local _sydeTabs = {}
+	local _moduleFlags = {}
+	local _initialized = false
+	local function getSydeTabPage(title)
+		if typeof(getGuiRoot) ~= "function" then
 			return nil
 		end
-		local trimmed = url:match("^%s*(.-)%s*$")
-		trimmed = trimmed:gsub("/+$", "")
-		trimmed = trimmed:gsub("discordapp%.com", "discord.com")
-		trimmed = trimmed:gsub("^https://www%.", "https://")
-		if trimmed:match("^https://discord%.com/api/webhooks/%d+/[%w_-]+$") then
-			return trimmed
+		local root = getGuiRoot()
+		if not root then
+			return nil
 		end
-		return nil
+		local pages = root:FindFirstChild("pages", true)
+		return pages and pages:FindFirstChild(title)
 	end
-
-	local function isValidDiscordWebhook(url)
-		return normalizeDiscordWebhookUrl(url) ~= nil
-	end
-
-	local function webhookRequestSucceeded(response)
-		if response == false then
-			return false
+	local function multiselectToString(val)
+		if type(val) == "string" then
+			return val
 		end
-		if response == nil then
-			return true
+		if type(val) ~= "table" then
+			return ""
 		end
-		if typeof(response) ~= "table" then
-			return true
-		end
-		if response.Success == false then
-			return false
-		end
-		local status = response.StatusCode or response.status_code or response.Status or response.status
-		if status and (status < 200 or status >= 300) then
-			return false
-		end
-		return true
-	end
-
-	local function tryWebhookHttpRequest(requestFn, url, body)
-		local headers = { ["content-type"] = "application/json" }
-		local ok, response = pcall(requestFn, {
-			Url = url,
-			Body = body,
-			Method = "POST",
-			Headers = headers,
-		})
-		return ok and webhookRequestSucceeded(response)
-	end
-
-	local function tryWebhookPostAsync(url, body)
-		return pcall(function()
-			HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
-		end)
-	end
-
-	local function postDiscordWebhook(url, payload)
-		local normalizedUrl = normalizeDiscordWebhookUrl(url)
-		if not normalizedUrl then
-			return false
-		end
-		local body = HttpService:JSONEncode(payload)
-		local requestFn = resolveHttpRequest()
-		if requestFn then
-			if tryWebhookHttpRequest(requestFn, normalizedUrl, body) then
-				return true
-			end
-			local proxyUrl = normalizedUrl:gsub("discord%.com", "webhook.lewisakura.dev")
-			if tryWebhookHttpRequest(requestFn, proxyUrl, body) then
-				return true
+		local parts = {}
+		for k, v in pairs(val) do
+			if type(v) == "string" then
+				table.insert(parts, v)
+			elseif v == true and type(k) == "string" then
+				table.insert(parts, k)
 			end
 		end
-		if tryWebhookPostAsync(normalizedUrl, body) then
-			return true
-		end
-		local proxyUrl = normalizedUrl:gsub("discord%.com", "webhook.lewisakura.dev")
-		return tryWebhookPostAsync(proxyUrl, body)
+		table.sort(parts)
+		return table.concat(parts, ",")
 	end
-
-	local function buildWebhookPayload(title, description, color)
-		return {
-			username = WEBHOOK_HUB_NAME,
-			embeds = {
-				{
-					title = tostring(title or "Notification"),
-					description = tostring(description or ""),
-					color = color or 3553599,
-					footer = {
-						text = getWebhookFooterText(),
+	local function parseIconId(icon)
+		if not icon then
+			return "7059346373"
+		end
+		return tostring(icon):match("(%d+)") or "7059346373"
+	end
+	local function makeFlag(tabId, mod, opt)
+		return (tabId .. "_" .. mod.name .. "_" .. (opt and opt.label or "")):gsub("%s+", "_")
+	end
+	local function buildOption(tab, tabId, mod, opt)
+		local flagName = makeFlag(tabId, mod, opt)
+		if opt.type == "button" then
+			tab:Button({
+				Title = opt.label,
+				Description = opt.desc or "",
+				CallBack = function()
+					if opt.callback then
+						pcall(opt.callback)
+					end
+				end,
+			})
+		elseif opt.type == "toggle" or opt.type == "checkbox" then
+			opt._flag = tab:Toggle({
+				Title = opt.label,
+				Description = opt.desc or "",
+				Value = opt.value == true,
+				Config = true,
+				Flag = flagName,
+				CallBack = function(state)
+					opt.value = state
+					if opt.callback then
+						pcall(opt.callback, state)
+					end
+				end,
+			})
+		elseif opt.type == "slider" then
+			local starterVal = opt.value
+			if starterVal == nil then
+				starterVal = opt.min or 0
+			end
+			tab:Slider({
+				Title = opt.label,
+				Description = opt.desc or "",
+				Sliders = {
+					{
+						Title = opt.label,
+						Range = { opt.min or 0, opt.max or 100 },
+						Increment = opt.increment or 1,
+						StarterValue = starterVal,
+						Config = true,
+						Flag = flagName,
+						CallBack = function(val)
+							opt.value = val
+							if opt.callback then
+								pcall(opt.callback, val)
+							end
+						end,
 					},
-					timestamp = getWebhookTimestamp(),
 				},
+			})
+			opt.value = starterVal
+			if opt.callback then
+				pcall(opt.callback, starterVal)
+			end
+		elseif opt.type == "dropdown" then
+			local starter = opt.value
+			if starter == "None" or starter == "" then
+				starter = nil
+			end
+			opt._flag = tab:Dropdown({
+				Title = opt.label,
+				Options = opt.list or {},
+				StarterOption = starter,
+				PlaceHolder = "Select...",
+				Config = true,
+				Flag = flagName,
+				CallBack = function(val)
+					opt.value = val
+					if opt.callback then
+						pcall(opt.callback, val)
+					end
+				end,
+			})
+			if opt.onCreate then
+				pcall(opt.onCreate, opt._flag)
+			end
+		elseif opt.type == "multiselect" then
+			opt._flag = tab:Dropdown({
+				Title = opt.label,
+				Options = opt.list or {},
+				Multi = true,
+				PlaceHolder = "Select options...",
+				Config = true,
+				Flag = flagName,
+				CallBack = function(val)
+					local str = multiselectToString(val)
+					opt.value = str
+					if opt.callback then
+						pcall(opt.callback, str)
+					end
+				end,
+			})
+			if opt.onCreate then
+				pcall(opt.onCreate, opt._flag)
+			end
+		elseif opt.type == "textbox" then
+			tab:TextInput({
+				Title = opt.label,
+				PlaceHolder = opt.placeholder or "",
+				NumberOnly = opt.numberOnly == true,
+				CallBack = function(text, enter)
+					opt.value = text
+					if opt.callback then
+						pcall(opt.callback, text, enter)
+					end
+				end,
+			})
+		elseif opt.type == "paragraph" then
+			local widget = tab:Paragraph({
+				Title = opt.title or opt.label or "",
+				Content = opt.content or "",
+			})
+			opt._widget = widget
+			if opt.onCreate then
+				pcall(opt.onCreate, widget)
+			end
+		elseif opt.type == "label" then
+			local widget = tab:Label(opt.label or opt.content or "", opt.align or "Left")
+			opt._widget = widget
+			if opt.onCreate then
+				pcall(opt.onCreate, widget)
+			end
+		elseif opt.type == "section" then
+			tab:Section(opt.label or opt.title or "", parseIconId(opt.icon))
+		elseif opt.type == "color" or opt.type == "colorpicker" then
+			opt._flag = tab:ColorPicker({
+				Title = opt.label,
+				Color = opt.value or Color3.fromRGB(255, 255, 255),
+				Flag = flagName,
+				CallBack = function(color)
+					opt.value = color
+					if opt.callback then
+						pcall(opt.callback, color)
+					end
+				end,
+			})
+		end
+	end
+	local function buildModule(tab, tabId, mod, tabIcon)
+		local sectionTitle = mod.name
+		if mod.badge and mod.badge.text then
+			sectionTitle = mod.name .. "  [" .. mod.badge.text .. "]"
+		end
+		tab:Section(sectionTitle, parseIconId(mod.icon or tabIcon))
+		if mod.desc and mod.desc ~= "" and mod.notoggle then
+			tab:Label(mod.desc, "Left")
+		end
+		if not mod.notoggle then
+			local flagName = (tabId .. "_" .. mod.name):gsub("%s+", "_")
+			local flag = tab:Toggle({
+				Title = mod.name,
+				Description = mod.desc or "",
+				Value = mod.on == true,
+				Config = true,
+				Flag = flagName,
+				CallBack = function(state)
+					mod.on = state
+					if mod.callback then
+						pcall(mod.callback, state)
+					end
+				end,
+			})
+			_moduleFlags[tabId .. "::" .. mod.name] = flag
+			mod._flag = flag
+		end
+		if mod.opts then
+			for _, opt in mod.opts do
+				buildOption(tab, tabId, mod, opt)
+			end
+		end
+	end
+	local function processPendingTabs()
+		for _, tabId in _pendingOrder do
+			local def = _pendingTabs[tabId]
+			if def then
+				local tab = _sydeWindow:InitTab({ Title = tabId })
+				_sydeTabs[tabId] = tab
+				if def.customCallback then
+					tab:Section("Scanner", parseIconId(def.icon))
+					task.defer(function()
+						local page = getSydeTabPage(tabId)
+						if page then
+							local host = Instance.new("Frame")
+							host.Name = "CustomTabHost"
+							host.Size = UDim2.new(1, 0, 0, 400)
+							host.AutomaticSize = Enum.AutomaticSize.Y
+							host.BackgroundTransparency = 1
+							host.BorderSizePixel = 0
+							host.Parent = page
+							pcall(def.customCallback, host)
+						end
+					end)
+				end
+				local mods = hubStore.Modules[tabId]
+				if mods then
+					for _, mod in mods do
+						buildModule(tab, tabId, mod, def.icon)
+					end
+				end
+			end
+		end
+		local settingsMods = hubStore.Modules.Settings
+		if settingsMods and #settingsMods > 0 and not _sydeTabs.Settings then
+			local tab = _sydeWindow:InitTab({ Title = "Settings" })
+			_sydeTabs.Settings = tab
+			for _, mod in settingsMods do
+				buildModule(tab, "Settings", mod, "7059346373")
+			end
+		end
+	end
+	local hub = { tabDefs = {} }
+	function hub:CreateTab(tabId, icon, customCallback)
+		table.insert(self.tabDefs, { id = tabId, icon = icon, customCallback = customCallback })
+		_pendingTabs[tabId] = { customCallback = customCallback, icon = icon }
+		table.insert(_pendingOrder, tabId)
+		hubStore.Modules[tabId] = hubStore.Modules[tabId] or {}
+	end
+	function hub:CreateModule(tabId, moduleData)
+		hubStore.Modules[tabId] = hubStore.Modules[tabId] or {}
+		table.insert(hubStore.Modules[tabId], moduleData)
+	end
+	function hub:Notify(text, _icon)
+		syde:Notify({
+			Title = brand.Name or "Hub",
+			Content = tostring(text):gsub("<[^>]+>", ""),
+			Duration = 3,
+			Icon = brand.Logo,
+		})
+	end
+	function hub:Toggle()
+		pcall(function()
+			if ToggleUI then
+				ToggleUI()
+			end
+		end)
+	end
+	function hub:SetModuleState(tabId, moduleName, isOn)
+		local mods = hubStore.Modules[tabId]
+		if not mods then
+			return
+		end
+		for _, mod in mods do
+			if mod.name == moduleName then
+				mod.on = isOn
+				local flag = _moduleFlags[tabId .. "::" .. moduleName]
+				if flag and flag.Set then
+					pcall(function()
+						flag:Set(isOn)
+					end)
+				elseif mod.callback then
+					pcall(mod.callback, isOn)
+				end
+				return
+			end
+		end
+	end
+	function hub:SetOption(tabId, moduleName, optionLabel, newValue)
+		local mods = hubStore.Modules[tabId]
+		if not mods then
+			return
+		end
+		for _, mod in mods do
+			if mod.name == moduleName and mod.opts then
+				for _, opt in mod.opts do
+					if opt.label == optionLabel then
+						opt.value = newValue
+						if opt._flag and opt._flag.Set then
+							pcall(function()
+								opt._flag:Set(newValue == true)
+							end)
+						end
+						if opt.callback then
+							pcall(opt.callback, newValue)
+						end
+						return
+					end
+				end
+			end
+		end
+	end
+	function hub:Init(title, _a, _b, _logo)
+		if _initialized then
+			return
+		end
+		_initialized = true
+		syde:Load({
+			Logo = brand.Logo,
+			Name = title or brand.Name,
+			Status = "Stable",
+			Accent = brand.Accent,
+			HitBox = brand.Accent,
+			Socials = { Discord = brand.Discord },
+			ConfigurationSaving = {
+				Enabled = true,
+				FolderName = brand.ConfigFolder,
+				FileName = brand.ConfigFile,
 			},
-		}
-	end
-
-	local function sendWebhookPayload(payload, forceSend)
-		if #webhookUrls == 0 then
-			return 0, 0, "No webhooks saved"
-		end
-		if not forceSend and not webhookMonitoringActive() then
-			return 0, 0, "No alerts enabled"
-		end
-		local sent, failed = 0, 0
-		for _, url in ipairs(webhookUrls) do
-			local ok = postDiscordWebhook(url, payload)
-			if ok then
-				sent = sent + 1
-			else
-				failed = failed + 1
-			end
-		end
-		return sent, failed
-	end
-
-	local function formatWebhookUrlList()
-		if #webhookUrls == 0 then
-			return "No webhooks saved.\nPaste a Discord webhook URL below to add one."
-		end
-		local lines = { string.format("Saved webhooks (%d):", #webhookUrls) }
-		for index, url in ipairs(webhookUrls) do
-			lines[#lines + 1] = string.format("%d. %s", index, maskWebhookUrl(url))
-		end
-		return table.concat(lines, "\n")
-	end
-
-	local function refreshWebhookUrlParagraph()
-		if webhookUrlParagraph then
-			setHubParagraph(webhookUrlParagraph, formatWebhookUrlList(), "Saved Webhooks")
-		end
-	end
-
-	local function broadcastWebhook(title, description, color, forceSend)
-		local ok, payload = pcall(buildWebhookPayload, title, description, color)
-		if not ok or not payload then
-			return 0, 1
-		end
-		if forceSend then
-			return sendWebhookPayload(payload, true)
-		end
+		})
+		_sydeWindow = syde:Init({
+			Title = title or brand.Name,
+			SubText = brand.Subtitle,
+			Home = {
+				Enabled = true,
+				hTitle = title or brand.Name,
+				hSubText = brand.Subtitle,
+				profileImage = brand.Logo,
+			},
+			QuickActions = false,
+		})
+		processPendingTabs()
 		task.spawn(function()
-			sendWebhookPayload(payload, false)
+			task.wait(0.2)
+			local bootstraps = hubStore.paragraphBootstraps
+			if bootstraps then
+				for _, fn in bootstraps do
+					pcall(fn)
+				end
+			end
 		end)
+		syde:Notify({
+			Title = title or brand.Name,
+			Content = (brand.Subtitle or "") .. " loaded. Press RightShift to toggle the menu.",
+			Duration = 5,
+			Icon = brand.Logo,
+		})
 	end
-
-	local function bootstrapWebhookState()
-		if webhookBootstrapped then
-			return
-		end
-		webhookBootstrapped = true
-		local stockValues = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-		if stockValues then
-			for _, shopName in { "SeedShop", "GearShop", "CrateShop" } do
-				local itemsFolder = stockValues:FindFirstChild(shopName) and stockValues[shopName]:FindFirstChild("Items")
-				if itemsFolder then
-					for _, itemVal in itemsFolder:GetChildren() do
-						webhookState.stock[shopName .. ":" .. itemVal.Name] = tonumber(itemVal.Value) or 0
-					end
-				end
-			end
-		end
-		local spawnsFolder = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("WildPetSpawns")
-		if spawnsFolder then
-			for _, model in spawnsFolder:GetChildren() do
-				if model:IsA("Model") then
-					webhookState.pets[model] = true
-				end
-			end
-		end
-		local weatherValues = game:GetService("ReplicatedStorage"):FindFirstChild("WeatherValues")
-		if weatherValues then
-			for weatherName in pairs(predictWeatherMeta) do
-				webhookState.weather[weatherName] = weatherValues:GetAttribute(weatherName .. "_Playing") == true
-			end
-		end
-		if ensurePredictModules() then
-			local now = getPredictServerNow()
-			local _, phaseName = getPredictCycleInfo(now)
-			webhookState.moonPhase = phaseName
-			local moonName = workspace:GetAttribute("ActiveWeather")
-			if typeof(moonName) ~= "string" or moonName == "" then
-				local cycleId = select(1, getPredictCycleInfo(now))
-				moonName = predictNightMoon(cycleId)
-			end
-			webhookState.moonName = moonName
-		end
-	end
-
-	local function csvToSet(csv)
-		local set = {}
-		if typeof(csv) ~= "string" or csv == "" or csv == "None" then
-			return set
-		end
-		for entry in (csv .. ","):gmatch("([^,]+),") do
-			local name = entry:match("^%s*(.-)%s*$")
-			if name ~= "" then
-				set[name] = true
-			end
-		end
-		return set
-	end
-
-	local function webhookCsvIsEmpty(csv)
-		return typeof(csv) ~= "string" or csv == "" or csv == "None"
-	end
-
-	local function webhookMatchesNameList(value, listCsv, filterType, normalizeFn)
-		normalizeFn = normalizeFn or function(v)
-			return v
-		end
-		local normalizedValue = normalizeFn(value)
-		if webhookCsvIsEmpty(listCsv) then
-			return filterType ~= "Whitelist"
-		end
-		local matched = false
-		for entry in (listCsv .. ","):gmatch("([^,]+),") do
-			local name = entry:match("^%s*(.-)%s*$")
-			if name ~= "" and normalizeFn(name) == normalizedValue then
-				matched = true
-				break
-			end
-		end
-		if filterType == "Whitelist" then
-			return matched
-		end
-		return not matched
-	end
-
-	local function webhookMatchesMutationList(mutation, listCsv, filterType)
-		mutation = mutation or "None"
-		if mutation == "" then
-			mutation = "None"
-		end
-		if webhookCsvIsEmpty(listCsv) then
-			return true
-		end
-		return webhookMatchesNameList(mutation, listCsv, filterType)
-	end
-
-	local function normalizeGardenCropName(name)
-		if typeof(name) ~= "string" or name == "" then
-			return ""
-		end
-		if displayCropMap[name] then
-			return displayCropMap[name]
-		end
-		local lower = name:lower()
-		if displayCropMap[lower] then
-			return displayCropMap[lower]
-		end
-		return getcropname(name) or name
-	end
-
-	local function resetGardenWebhookState()
-		table.clear(webhookState.garden)
-	end
-
-	local function resetPetWebhookState()
-		table.clear(webhookState.pets)
-	end
-
-	local function normalizePetFilterName(name)
-		if typeof(name) ~= "string" or name == "" then
-			return ""
-		end
-		local info = getPetInfo(name)
-		if info and typeof(info.AssetName) == "string" and info.AssetName ~= "" then
-			return info.AssetName
-		end
-		return name
-	end
-
-	local function gardenFruitMatchesFilters(fruit)
-		local cropName = normalizeGardenCropName(fruit.seedName)
-		if not webhookMatchesNameList(cropName, webhookGardenFruits, webhookGardenFruitType, normalizeGardenCropName) then
-			return false
-		end
-		if webhookGardenMinWeight > 0 and fruit.weight < webhookGardenMinWeight then
-			return false
-		end
-		if webhookGardenMaxWeight > 0 and fruit.weight > webhookGardenMaxWeight then
-			return false
-		end
-		if webhookGardenMinPrice > 0 and fruit.price < webhookGardenMinPrice then
-			return false
-		end
-		if webhookGardenMaxPrice > 0 and fruit.price > webhookGardenMaxPrice then
-			return false
-		end
-		if not webhookMatchesMutationList(fruit.mutation, webhookGardenMutations, webhookGardenMutationType) then
-			return false
-		end
-		return true
-	end
-
-	local function stockItemMatchesFilter(itemName)
-		return webhookMatchesNameList(itemName, webhookStockFilter, webhookStockFilterType)
-	end
-
-	local function getWildPetSpawnInfo(model)
-		local petName = model:GetAttribute("PetName") or model.Name
-		local cleanName = petName:gsub("^WildPet_[^_]+_", "")
-		local petSize = model:GetAttribute("PetSize") or model:GetAttribute("Size") or "Normal"
-		local petType = model:GetAttribute("PetType") or model:GetAttribute("Type") or model:GetAttribute("Variant") or "Normal"
-		local mutation = model:GetAttribute("Mutation")
-		if not mutation or mutation == "" or mutation == "None" then
-			if petType ~= "Normal" and petType ~= "" then
-				mutation = petType
-			elseif petSize ~= "Normal" and petSize ~= "" then
-				mutation = petSize
-			else
-				mutation = "None"
-			end
-		end
-		local info = getPetInfo(cleanName)
-		local rarity = info and info.Rarity or "Unknown"
-		return cleanName, rarity, mutation, petSize, petType
-	end
-
-	local function petVariationMatches(mutation, petSize, petType, listCsv, filterType)
-		if webhookCsvIsEmpty(listCsv) then
-			return true
-		end
-		local mutSet = csvToSet(listCsv)
-		local isMatch = mutSet[mutation] == true
-		if not isMatch and petSize and mutSet[petSize] then
-			isMatch = true
-		end
-		if not isMatch and petType and mutSet[petType] then
-			isMatch = true
-		end
-		if mutSet["None"] and (mutation == "None" or mutation == "Normal")
-			and (petSize == "Normal" or petSize == "")
-			and (petType == "Normal" or petType == "") then
-			isMatch = true
-		end
-		if filterType == "Whitelist" then
-			return isMatch
-		end
-		return not isMatch
-	end
-
-	local function petWebhookMatchesFilters(cleanName, rarity, mutation, petSize, petType)
-		local petName = normalizePetFilterName(cleanName)
-		if not webhookMatchesNameList(petName, webhookPetFilter, webhookPetFilterType, normalizePetFilterName) then
-			return false
-		end
-		if not webhookMatchesNameList(rarity, webhookPetRarities, webhookPetRarityType) then
-			return false
-		end
-		if not petVariationMatches(mutation, petSize, petType, webhookPetMutations, webhookPetMutationType) then
-			return false
-		end
-		return true
-	end
-
-	local function checkGardenWebhooks()
-		if not webhookGardenEnabled then
-			return
-		end
-		for _, fruit in enumerateMyGardenFruits(true) do
-			if gardenFruitMatchesFilters(fruit) and not webhookState.garden[fruit.key] then
-				webhookState.garden[fruit.key] = true
-				broadcastWebhook(
-					"Garden Fruit",
-					table.concat({
-						"Crop: " .. fruit.seedName,
-						"Weight: " .. string.format("%.2f kg", fruit.weight),
-						"Value: " .. formatCurrencyAmount(fruit.price, true),
-						"Mutation: " .. fruit.mutation,
-					}, "\n"),
-					5763719
-				)
-			end
-		end
-	end
-
-	local function checkMoonWebhooks()
-		if (not webhookMoonEnabled and not webhookPhaseEnabled) or not ensurePredictModules() then
-			return
-		end
-		local now = getPredictServerNow()
-		local cycleId, phaseName = getPredictCycleInfo(now)
-		local moonName = workspace:GetAttribute("ActiveWeather")
-		if typeof(moonName) ~= "string" or moonName == "" then
-			moonName = predictNightMoon(cycleId)
-		end
-		local phaseChanged = webhookState.moonPhase ~= nil and webhookState.moonPhase ~= phaseName
-		local moonChanged = webhookState.moonName ~= nil and webhookState.moonName ~= moonName
-		local wasKnown = webhookState.moonPhase ~= nil
-		if phaseChanged and webhookPhaseEnabled and wasKnown then
-			broadcastWebhook(
-				"Phase Change",
-				table.concat({
-					"New phase: " .. phaseName,
-					"Server time: " .. formatPredictClock(now),
-				}, "\n"),
-				9807270
-			)
-		end
-		if wasKnown and phaseName == "Night" and (phaseChanged or moonChanged) and webhookMoonEnabled and moonName and moonName ~= "" then
-			broadcastWebhook(
-				"Moon Event",
-				table.concat({
-					"Phase: Night",
-					"Moon: " .. moonName,
-					"Server time: " .. formatPredictClock(now),
-				}, "\n"),
-				10181046
-			)
-		end
-		webhookState.moonPhase = phaseName
-		webhookState.moonName = moonName
-	end
-
-	local function checkStockWebhooks()
-		if not webhookStockSeeds and not webhookStockGears and not webhookStockCrates then
-			return
-		end
-		local stockValues = game:GetService("ReplicatedStorage"):FindFirstChild("StockValues")
-		if not stockValues then
-			return
-		end
-		local shops = {}
-		if webhookStockSeeds then
-			table.insert(shops, { "SeedShop", "Seeds" })
-		end
-		if webhookStockGears then
-			table.insert(shops, { "GearShop", "Gear" })
-		end
-		if webhookStockCrates then
-			table.insert(shops, { "CrateShop", "Crates" })
-		end
-		for _, shop in shops do
-			local shopName, shopLabel = shop[1], shop[2]
-			local itemsFolder = stockValues:FindFirstChild(shopName) and stockValues[shopName]:FindFirstChild("Items")
-			if itemsFolder then
-				for _, itemVal in itemsFolder:GetChildren() do
-					local itemName = itemVal.Name:gsub("Seed$", "")
-					if shopName == "CrateShop" and not itemName:find("Crate") then
-						itemName = itemName .. " Crate"
-					end
-					if not isShopItemInCurrentWorld(shopName, itemName) then
-						continue
-					end
-					if not stockItemMatchesFilter(itemName) then
-						continue
-					end
-					local stateKey = shopName .. ":" .. itemVal.Name
-					local amount = tonumber(itemVal.Value) or 0
-					local previous = webhookState.stock[stateKey] or 0
-					webhookState.stock[stateKey] = amount
-					if amount > 0 and previous <= 0 then
-						broadcastWebhook(
-							shopLabel .. " Restock",
-							table.concat({
-								"Item: " .. itemName,
-								"Stock: " .. tostring(amount),
-								"Shop: " .. shopLabel,
-							}, "\n"),
-							15844367
-						)
-					end
-				end
-			end
-		end
-	end
-
-	local function checkPetWebhooks()
-		if not webhookPetsEnabled then
-			return
-		end
-		local map = workspace:FindFirstChild("Map")
-		local spawnsFolder = map and map:FindFirstChild("WildPetSpawns")
-		if not spawnsFolder then
-			return
-		end
-		local seen = {}
-		for _, model in spawnsFolder:GetChildren() do
-			if model:IsA("Model") then
-				seen[model] = true
-				if not webhookState.pets[model] then
-					local cleanName, rarity, mutation, petSize, petType = getWildPetSpawnInfo(model)
-					if not petWebhookMatchesFilters(cleanName, rarity, mutation, petSize, petType) then
-						continue
-					end
-					webhookState.pets[model] = true
-					local lines = {
-						"Pet: " .. cleanName,
-						"Rarity: " .. rarity,
-						"Variation: " .. mutation,
-					}
-					if petSize ~= "Normal" and petSize ~= "" then
-						table.insert(lines, "Size: " .. petSize)
-					end
-					if petType ~= "Normal" and petType ~= "" and petType ~= mutation then
-						table.insert(lines, "Type: " .. petType)
-					end
-					broadcastWebhook(
-						"Wild Pet Spawn",
-						table.concat(lines, "\n"),
-						16744272
-					)
-				end
-			end
-		end
-		for model in pairs(webhookState.pets) do
-			if not seen[model] or not model.Parent then
-				webhookState.pets[model] = nil
-			end
-		end
-	end
-
-	local function checkWeatherWebhooks()
-		if not webhookWeatherEnabled then
-			return
-		end
-		local weatherValues = game:GetService("ReplicatedStorage"):FindFirstChild("WeatherValues")
-		if not weatherValues then
-			return
-		end
-		for weatherName in pairs(predictWeatherMeta) do
-			local playing = weatherValues:GetAttribute(weatherName .. "_Playing") == true
-			local previous = webhookState.weather[weatherName]
-			webhookState.weather[weatherName] = playing
-			if playing and previous ~= true and (previous == false or previous == nil) then
-				local endTime = weatherValues:GetAttribute(weatherName .. "_EndTime") or 0
-				local timeLeft = math.max(0, endTime - DateTime.now().UnixTimestamp)
-				broadcastWebhook(
-					"Weather Started",
-					table.concat({
-						"Weather: " .. weatherName,
-						"Time left: " .. formatPredictCountdown(timeLeft),
-					}, "\n"),
-					3447003
-				)
-			end
-		end
-	end
-
-	local function webhookMonitoringActive()
-		return webhookGardenEnabled
-			or webhookMoonEnabled
-			or webhookPhaseEnabled
-			or webhookWeatherEnabled
-			or webhookStockSeeds
-			or webhookStockGears
-			or webhookStockCrates
-			or webhookPetsEnabled
-			or webhookStealEnabled
-	end
-
-	local function startWebhookMonitor()
-		if webhookThread then
-			return
-		end
-		webhookThread = task.spawn(function()
-			while #webhookUrls > 0 do
-				if webhookMonitoringActive() then
-					bootstrapWebhookState()
-					pcall(checkGardenWebhooks)
-					pcall(checkMoonWebhooks)
-					pcall(checkStockWebhooks)
-					pcall(checkPetWebhooks)
-					pcall(checkWeatherWebhooks)
-				end
-				task.wait(3)
-			end
-			webhookThread = nil
-		end)
-	end
-
-	webhookHooks.onSteal = function(target)
-		if not webhookStealEnabled or not target then
-			return
-		end
-		broadcastWebhook(
-			"Auto Steal Success",
-			table.concat({
-				"Crop: " .. tostring(target.seedName),
-				"Garden: " .. tostring(target.plotLabel or "Unknown"),
-				"Weight: " .. string.format("%.2f kg", target.weight or 0),
-				"Value: " .. formatCurrencyAmount(target.price or 0, true),
-				"Mutation: " .. tostring(target.mutation or "None"),
-			}, "\n"),
-			15158332
-		)
-	end
-
-	hub:CreateTab("Webhook", "rbxassetid://16000149927")
-	hub:CreateModule("Webhook", {
-		name = "Webhooks",
-		notoggle = true,
-		on = false,
-		bind = "None",
-		desc = "Discord webhook URLs and alert filters.",
-		callback = function() end,
-		opts = {
-			{type = "paragraph", title = "Saved Webhooks", content = "Loading...", onCreate = function(widget)
-				webhookUrlParagraph = widget
-				refreshWebhookUrlParagraph()
-			end},
-			{type = "textbox", label = "Add Webhook URL", value = "", placeholder = "https://discord.com/api/webhooks/...", callback = function(value)
-				local url = typeof(value) == "string" and value:match("^%s*(.-)%s*$") or ""
-				if url == "" then
-					return
-				end
-				url = normalizeDiscordWebhookUrl(url)
-				if not url then
-					hub:Notify("Invalid Discord webhook URL.")
-					return
-				end
-				for _, existing in ipairs(webhookUrls) do
-					if existing == url then
-						hub:Notify("Webhook already saved.")
-						refreshWebhookUrlParagraph()
-						return
-					end
-				end
-				table.insert(webhookUrls, url)
-				refreshWebhookUrlParagraph()
-				webhookBootstrapped = false
-				startWebhookMonitor()
-				hub:Notify("Webhook added (" .. #webhookUrls .. " total).")
-			end},
-			{type = "button", label = "Send Test Message", callback = function()
-				if #webhookUrls == 0 then
-					hub:Notify("Add a webhook URL first.")
-					return
-				end
-				task.spawn(function()
-					local ok, payload = pcall(buildWebhookPayload,
-						"Webhook Test",
-						table.concat({
-							"Connection successful.",
-							"Player: " .. localPlayer.Name,
-							"World: " .. getWorldDisplayName(),
-						}, "\n"),
-						5763719
-					)
-					if not ok or not payload then
-						hub:Notify("Failed to build test message.")
-						return
-					end
-					local sent, failed = sendWebhookPayload(payload, true)
-					if sent > 0 and failed == 0 then
-						hub:Notify("Test message sent (" .. sent .. ").")
-					elseif sent > 0 then
-						hub:Notify("Sent: " .. sent .. ", failed: " .. failed .. ".")
-					else
-						hub:Notify("Webhook send failed. Check URL or executor HTTP support.")
-					end
-				end)
-			end},
-			{type = "button", label = "Clear All Webhooks", callback = function()
-				table.clear(webhookUrls)
-				refreshWebhookUrlParagraph()
-				hub:Notify("All webhooks removed.")
-			end},
-			{type = "section", label = "Garden"},
-			{type = "checkbox", label = "My Garden Fruits", value = false, callback = function(value)
-				webhookGardenEnabled = value
-				if value then
-					resetGardenWebhookState()
-				end
-			end},
-			{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookGardenFruitType = value
-				resetGardenWebhookState()
-			end},
-			{type = "multiselect", label = "Filter Fruits", value = "", list = gameLists.seeds, callback = function(value)
-				webhookGardenFruits = value or ""
-				resetGardenWebhookState()
-			end, onCreate = function(widget)
-				registerGameListWidget(widget, "seeds")
-			end},
-			{type = "textbox", label = "Min Weight (kg)", value = "0", placeholder = "0 = no minimum", callback = function(value)
-				webhookGardenMinWeight = tonumber(value) or 0
-			end},
-			{type = "textbox", label = "Max Weight (kg)", value = "0", placeholder = "0 = no maximum", callback = function(value)
-				webhookGardenMaxWeight = tonumber(value) or 0
-			end},
-			{type = "textbox", label = "Min Value", value = "0", placeholder = "0 = no minimum (e.g. 500K)", callback = function(value)
-				webhookGardenMinPrice = parseWebhookMoneyInput(value or "0")
-			end},
-			{type = "textbox", label = "Max Value", value = "0", placeholder = "0 = no maximum (e.g. 2M)", callback = function(value)
-				webhookGardenMaxPrice = parseWebhookMoneyInput(value or "0")
-			end},
-			{type = "dropdown", label = "Filter Mutation Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookGardenMutationType = value
-				resetGardenWebhookState()
-			end},
-			{type = "multiselect", label = "Filter Mutations", value = "None", list = gameLists.mutations, callback = function(value)
-				webhookGardenMutations = value or ""
-				resetGardenWebhookState()
-			end},
-			{type = "section", label = "World Events"},
-			{type = "checkbox", label = "Moon Events", value = false, callback = function(value)
-				webhookMoonEnabled = value
-			end},
-			{type = "checkbox", label = "Day/Night Phase Change", value = false, callback = function(value)
-				webhookPhaseEnabled = value
-			end},
-			{type = "checkbox", label = "Weather Started", value = false, callback = function(value)
-				webhookWeatherEnabled = value
-			end},
-			{type = "section", label = "Shop Restocks"},
-			{type = "checkbox", label = "Seed Shop", value = false, callback = function(value)
-				webhookStockSeeds = value
-			end},
-			{type = "checkbox", label = "Gear Shop", value = false, callback = function(value)
-				webhookStockGears = value
-			end},
-			{type = "checkbox", label = "Crate Shop", value = false, callback = function(value)
-				webhookStockCrates = value
-			end},
-			{type = "dropdown", label = "Stock Filter Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookStockFilterType = value
-			end},
-			{type = "multiselect", label = "Stock Item Filter", value = "None", list = {}, callback = function(value)
-				webhookStockFilter = value or ""
-			end, onCreate = function(widget)
-				local combined = {}
-				for _, name in gameLists.seeds do table.insert(combined, name) end
-				for _, name in gameLists.gears do table.insert(combined, name) end
-				for _, name in gameLists.crates do table.insert(combined, name) end
-				table.sort(combined)
-				if widget.SetOptions then
-					pcall(function() widget:SetOptions(combined) end)
-				end
-			end},
-			{type = "section", label = "Wild Pets"},
-			{type = "checkbox", label = "Wild Pet Spawns", value = false, callback = function(value)
-				webhookPetsEnabled = value
-				if value then
-					resetPetWebhookState()
-				end
-			end},
-			{type = "dropdown", label = "Filter Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookPetFilterType = value
-				resetPetWebhookState()
-			end},
-			{type = "multiselect", label = "Filter Pets", value = "", list = gameLists.pets, callback = function(value)
-				webhookPetFilter = value or ""
-				resetPetWebhookState()
-			end, onCreate = function(widget)
-				registerGameListWidget(widget, "pets")
-			end},
-			{type = "dropdown", label = "Filter Rarity Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookPetRarityType = value
-				resetPetWebhookState()
-			end},
-			{type = "multiselect", label = "Filter Rarities", value = "", list = gameLists.rarities, callback = function(value)
-				webhookPetRarities = value or ""
-				resetPetWebhookState()
-			end, onCreate = function(widget)
-				registerGameListWidget(widget, "rarities")
-			end},
-			{type = "dropdown", label = "Filter Variation Type", value = "Whitelist", list = {"Whitelist", "Blacklist"}, callback = function(value)
-				webhookPetMutationType = value
-				resetPetWebhookState()
-			end},
-			{type = "multiselect", label = "Filter Variations", value = "None", list = gameLists.petMutations, callback = function(value)
-				webhookPetMutations = value or ""
-				resetPetWebhookState()
-			end, onCreate = function(widget)
-				registerGameListWidget(widget, "petMutations")
-			end},
-			{type = "section", label = "Other"},
-			{type = "checkbox", label = "Auto Steal Success", value = false, callback = function(value)
-				webhookStealEnabled = value
-			end},
-		}
-	})
-	table.insert(hubStore.paragraphBootstraps, refreshWebhookUrlParagraph)
-end)()
-local function createMobileToggleBtn()
-	local screenGui = getZenithGUI()
-	if not screenGui then return end
-	local existing = screenGui:FindFirstChild("ZenithMobileToggle")
-	if existing then
-		existing:Destroy()
-	end
-	local toggleBtn = Instance.new("ImageButton")
-	toggleBtn.Name = "ZenithMobileToggle"
-	toggleBtn.Size = UDim2.new(0, 42, 0, 42)
-	toggleBtn.Position = UDim2.new(0.02, 0, 0.45, 0)
-	toggleBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-	toggleBtn.Image = "rbxassetid://107758724327938"
-	toggleBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
-	toggleBtn.ScaleType = Enum.ScaleType.Fit
-	toggleBtn.Parent = screenGui
-	rnd(toggleBtn, 21)
-	stk(toggleBtn, Color3.fromRGB(30, 30, 35), 1)
-	toggleBtn.MouseButton1Click:Connect(function()
-		hub:Toggle()
-	end)
-	local dragging = false
-	local dragInput, dragStart, startPos
-	toggleBtn.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = toggleBtn.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	UIS.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			toggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	end)
+	return hub, hubStore
 end
-hub:Init("Casual Hub", nil, nil, "rbxassetid://107758724327938")
-pcall(refreshGameLists)
-pcall(refreshAllGameListWidgets)
-local isMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.MouseEnabled
-if isMobile then
-	task.spawn(createMobileToggleBtn)
-end
-task.spawn(function()
-	workspace.DescendantAdded:Connect(function(d)
-		if d:IsA("ProximityPrompt") and instantPromptsEnabled then
-			d.HoldDuration = 0
-		end
-	end)
-end)
+
+return syde
