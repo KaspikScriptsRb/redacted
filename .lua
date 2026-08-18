@@ -10912,10 +10912,40 @@ function syde:CreateHub(config)
 		if inc == nil then
 			inc = opt.Increment
 		end
-		if typeof(inc) ~= "number" or inc <= 0 then
-			inc = 1
+		if typeof(inc) == "number" and inc > 0 then
+			return inc
 		end
-		return inc
+
+		local minVal = tonumber(opt.min) or 0
+		local maxVal = tonumber(opt.max) or 100
+		local range = math.abs(maxVal - minVal)
+		local starterVal = tonumber(opt.value)
+		if starterVal == nil then
+			starterVal = minVal
+		end
+
+		local function hasFraction(n)
+			return math.abs(n - math.floor(n + 1e-9)) > 1e-6
+		end
+
+		local fractionalRange = hasFraction(minVal)
+			or hasFraction(maxVal)
+			or hasFraction(starterVal)
+			or range < 10
+
+		if not fractionalRange then
+			return 1
+		end
+		if range <= 1 then
+			return 0.05
+		elseif range <= 2 then
+			return 0.1
+		elseif range <= 5 then
+			return 0.1
+		elseif range <= 20 then
+			return 0.5
+		end
+		return 0.1
 	end
 	local function buildOption(tab, tabId, mod, opt)
 		local flagName = makeFlag(tabId, mod, opt)
