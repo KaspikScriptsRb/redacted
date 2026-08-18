@@ -10904,46 +10904,12 @@ function syde:CreateHub(config)
 	local function makeFlag(tabId, mod, opt)
 		return (tabId .. "_" .. mod.name .. "_" .. (opt and opt.label or "")):gsub("%s+", "_")
 	end
+	-- Slider step: set opt.increment, opt.step, or opt.Increment in CreateModule opts.
+	-- Example: { type = "slider", min = 0.05, max = 1, increment = 0.05, ... }
 	local function resolveSliderIncrement(opt)
-		local inc = opt.increment
-		if inc == nil then
-			inc = opt.step
-		end
-		if inc == nil then
-			inc = opt.Increment
-		end
+		local inc = opt.increment or opt.step or opt.Increment
 		if typeof(inc) == "number" and inc > 0 then
 			return inc
-		end
-
-		local minVal = tonumber(opt.min) or 0
-		local maxVal = tonumber(opt.max) or 100
-		local range = math.abs(maxVal - minVal)
-		local starterVal = tonumber(opt.value)
-		if starterVal == nil then
-			starterVal = minVal
-		end
-
-		local function hasFraction(n)
-			return math.abs(n - math.floor(n + 1e-9)) > 1e-6
-		end
-
-		local fractionalRange = hasFraction(minVal)
-			or hasFraction(maxVal)
-			or hasFraction(starterVal)
-			or range < 10
-
-		if not fractionalRange then
-			return 1
-		end
-		if range <= 1 then
-			return 0.05
-		elseif range <= 2 then
-			return 0.1
-		elseif range <= 5 then
-			return 0.1
-		elseif range <= 20 then
-			return 0.5
 		end
 		return 0.1
 	end
