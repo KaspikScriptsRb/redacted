@@ -1752,32 +1752,38 @@ end
 
 function syde:updateLayout(container, spacing)
 	spacing = spacing or 5
-	local ok, err = pcall(function()
-	local yOffset = 0
-	local containerWidth = guiAbsSize(container).X 
-
-	for _, v in ipairs(container:GetChildren()) do
-		if v:IsA('UIListLayout') then
-			v:Destroy()
+	pcall(function()
+		if not container or not container:IsA("GuiObject") then
+			return
 		end
-	end
-
-	if resizing == false then
-		for _, child in ipairs(container:GetChildren()) do
-			if (child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("TextLabel") or child:IsA("TextButton")) and child.Visible then
-				tweenservice:Create(child, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
-				yOffset = yOffset + math.max(guiAbsSize(child).Y, child.Size.Y.Offset) + spacing
+		local layout = nil
+		for _, child in ipairs(safeGetChildren(container)) do
+			if child:IsA("UIListLayout") then
+				layout = child
+				break
 			end
 		end
-	end
-
-	if container:IsA("ScrollingFrame") then
-		container.CanvasSize = UDim2.new(0, 0, 0, yOffset)
-	end
+		if not layout then
+			layout = Instance.new("UIListLayout")
+			layout.Name = "SydeListLayout"
+			layout.FillDirection = Enum.FillDirection.Vertical
+			layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+			layout.SortOrder = Enum.SortOrder.LayoutOrder
+			layout.Parent = container
+		end
+		layout.Padding = UDim.new(0, spacing)
+		if container:IsA("ScrollingFrame") then
+			container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+			container.CanvasSize = UDim2.new(0, 0, 0, 0)
+		end
+		local order = 1
+		for _, child in ipairs(safeGetChildren(container)) do
+			if child:IsA("GuiObject") and child.Visible and child ~= layout then
+				child.LayoutOrder = order
+				order += 1
+			end
+		end
 	end)
-	if not ok then
-		return
-	end
 end
 
 local dragSpeed = 0.6
@@ -7493,10 +7499,12 @@ function syde:Init(library)
 			defaultParent = newParent
 		end
 
-		for _, temp in ipairs(Page:GetChildren()) do
-			if temp:IsA("Frame") then
-				temp:Destroy()
-			end
+		for _, temp in ipairs(safeGetChildren(Page)) do
+			pcall(function()
+				if temp:IsA("Frame") then
+					temp:Destroy()
+				end
+			end)
 		end
 
 
@@ -8670,12 +8678,16 @@ function syde:Init(library)
 				end
 				UpdateSlider()
 
-				Slider.slide.Interact.MouseButton1Down:Connect(function()
-					dragging = true
+				pcall(function()
+					Slider.slide.Interact.MouseButton1Down:Connect(function()
+						dragging = true
+					end)
 				end)
 
-				Slider.slide.Interact.MouseButton1Up:Connect(function()
-					dragging = false
+				pcall(function()
+					Slider.slide.Interact.MouseButton1Up:Connect(function()
+						dragging = false
+					end)
 				end)
 
 				syde:AddConnection(userinput.InputEnded, function(input, processed)
