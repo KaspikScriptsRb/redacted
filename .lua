@@ -102,6 +102,25 @@ local function deferParagraphUpdate(callback)
 	end)
 end
 
+local function safeOnPropertyChanged(instance, property, callback)
+	if not instance or typeof(callback) ~= "function" then
+		return
+	end
+	pcall(function()
+		instance:GetPropertyChangedSignal(property):Connect(function()
+			pcall(callback)
+		end)
+	end)
+end
+
+local function safeGuiAlive(guiObject)
+	local alive = false
+	pcall(function()
+		alive = guiObject ~= nil and guiObject.Parent ~= nil
+	end)
+	return alive
+end
+
 local inputservice =	game:GetService("InsertService")
 local tweenservice = 	game:GetService("TweenService")
 local https = 			game:GetService("HttpService")
@@ -252,13 +271,29 @@ end
 
 local function scheduleParagraphResize(para, paraContent, animate)
 	applyParagraphSize(para, paraContent, animate)
+	local page = para and para.Parent
 	task.defer(function()
 		applyParagraphSize(para, paraContent, false)
+		if page then
+			pcall(function()
+				syde:updateLayout(page, 7)
+			end)
+		end
 		task.delay(0.1, function()
 			applyParagraphSize(para, paraContent, false)
+			if page then
+				pcall(function()
+					syde:updateLayout(page, 7)
+				end)
+			end
 		end)
 		task.delay(0.35, function()
 			applyParagraphSize(para, paraContent, false)
+			if page then
+				pcall(function()
+					syde:updateLayout(page, 7)
+				end)
+			end
 		end)
 	end)
 end
@@ -1413,19 +1448,16 @@ function Bento:Bind()
 
 	local busy = false
 
-	self.Container:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-
+	safeOnPropertyChanged(self.Container, "AbsoluteSize", function()
 		if busy then return end
 		busy = true
 
 		task.defer(function()
-
-			self:Update()
-
+			pcall(function()
+				self:Update()
+			end)
 			busy = false
-
 		end)
-
 	end)
 
 end
@@ -4862,47 +4894,53 @@ function syde:Init(library)
 					local HORIZONTAL_THRESHOLD = 260
 
 					local function updateHueValuesLayout()
-						if not HueValues.Visible then return end
+						pcall(function()
+							if not HueValues.Visible then return end
 
-						local width = HueValues.AbsoluteSize.X
-						local horizontal = width >= HORIZONTAL_THRESHOLD
+							local width = HueValues.AbsoluteSize.X
+							local horizontal = width >= HORIZONTAL_THRESHOLD
 
-						local x, y = 0, 0
-						local totalHeight = 0
+							local x, y = 0, 0
+							local totalHeight = 0
 
-						for _, item in ipairs(ITEMS) do
-							item.AnchorPoint = Vector2.new(1, 0)
+							for _, item in ipairs(ITEMS) do
+								item.AnchorPoint = Vector2.new(1, 0)
 
-							if horizontal then
-								item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
-								item.Position = UDim2.new(1, -x, 0, 0)
-								x += ITEM_WIDTH + GAP
-								totalHeight = ITEM_HEIGHT
-							else
-								item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
-								item.Position = UDim2.new(1, 0, 0, -y)
-								y += ITEM_HEIGHT + GAP
-								totalHeight = y
+								if horizontal then
+									item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
+									item.Position = UDim2.new(1, -x, 0, 0)
+									x += ITEM_WIDTH + GAP
+									totalHeight = ITEM_HEIGHT
+								else
+									item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
+									item.Position = UDim2.new(1, 0, 0, -y)
+									y += ITEM_HEIGHT + GAP
+									totalHeight = y
+								end
 							end
-						end
 
-						HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
-						HueValues.Position = UDim2.new(0.5, 0,1, -50)
+							HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
+							HueValues.Position = UDim2.new(0.5, 0,1, -50)
 
-						if Open then
-							tweenservice:Create(
-								colorpicker,
-								TweenInfo.new(0.35, Enum.EasingStyle.Quart),
-								{ Size = UDim2.new(1, -35, 0, 295 + totalHeight) }
-							):Play()
-						end
+							if Open then
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 295 + totalHeight) }
+								):Play()
+							end
+						end)
 					end
 
-					HueValues:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateHueValuesLayout)
-					colorpicker:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateHueValuesLayout)
+					safeOnPropertyChanged(HueValues, "AbsoluteSize", updateHueValuesLayout)
+					safeOnPropertyChanged(colorpicker, "AbsoluteSize", updateHueValuesLayout)
 
 					colorpicker:SetAttribute("UpdateHueLayout", true)
-					colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(updateHueValuesLayout)
+					pcall(function()
+						colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(function()
+							updateHueValuesLayout()
+						end)
+					end)
 
 					task.defer(updateHueValuesLayout)
 				end
@@ -6199,17 +6237,20 @@ function syde:Init(library)
 					-- Connect AbsoluteSize change **only once**
 					if Options.Increment > 4 then
 						if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
-							local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-								BuildTicks(Slider.slide, Options)
-							end)
-							-- Tag the connection so we don't connect again
-							local marker = Instance.new("BoolValue")
-							marker.Name = "_ResizeConnection"
-							marker.Parent = Slider.slide.Ticks
-							marker:GetPropertyChangedSignal("Parent"):Connect(function()
-								if not marker.Parent then
-									conn:Disconnect()
-								end
+							pcall(function()
+								local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+									pcall(function()
+										BuildTicks(Slider.slide, Options)
+									end)
+								end)
+								local marker = Instance.new("BoolValue")
+								marker.Name = "_ResizeConnection"
+								marker.Parent = Slider.slide.Ticks
+								marker:GetPropertyChangedSignal("Parent"):Connect(function()
+									if not marker.Parent then
+										conn:Disconnect()
+									end
+								end)
 							end)
 						end
 					end
@@ -7237,22 +7278,22 @@ function syde:Init(library)
 		local lastUptimeRefresh = 0
 
 		ss = syde:AddConnection(runservice.Heartbeat, function()
-			local now = tick()
-			if now - lastUptimeRefresh < 1 then
-				return
-			end
-			lastUptimeRefresh = now
-
-			if not uptimeParagraph or not uptimeParagraph.Set then
-				return
-			end
-			if not uptimeParagraph.Instance or not uptimeParagraph.Instance.Parent then
-				return
-			end
-
-			local uptime = now - startTime
-			local formatted = formatTime(uptime)
 			pcall(function()
+				local now = tick()
+				if now - lastUptimeRefresh < 1 then
+					return
+				end
+				lastUptimeRefresh = now
+
+				if not uptimeParagraph or not uptimeParagraph.Set then
+					return
+				end
+				if not safeGuiAlive(uptimeParagraph.Instance) then
+					return
+				end
+
+				local uptime = now - startTime
+				local formatted = formatTime(uptime)
 				uptimeParagraph:Set("Session Uptime: " .. formatted, "Session UpTime")
 			end)
 		end)
@@ -7338,44 +7379,38 @@ function syde:Init(library)
 		end
 
 
-		Page.ChildAdded:Connect(function(child)
-			if not child or not child:IsA("GuiObject") then
+		local pageLayoutQueued = false
+		local function queuePageLayout()
+			if pageLayoutQueued then
 				return
 			end
-			pcall(function()
-				child:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			pageLayoutQueued = true
+			task.defer(function()
+				pageLayoutQueued = false
+				pcall(function()
+					syde:updateLayout(Page, 7)
+				end)
+				task.delay(0.12, function()
 					pcall(function()
 						syde:updateLayout(Page, 7)
 					end)
 				end)
 			end)
+		end
+
+		Page.ChildAdded:Connect(function(child)
 			pcall(function()
-				child:GetPropertyChangedSignal("Visible"):Connect(function()
-					pcall(function()
-						syde:updateLayout(Page, 7)
-					end)
-				end)
-			end)
-			pcall(function()
-				syde:updateLayout(Page, 7)
+				if child and child:IsA("GuiObject") then
+					queuePageLayout()
+				end
 			end)
 		end)
 
 		Page.ChildRemoved:Connect(function()
-			pcall(function()
-				syde:updateLayout(Page, 7)
-			end)
+			queuePageLayout()
 		end)
 
-		Page:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-			pcall(function()
-				syde:updateLayout(Page, 7)
-			end)
-		end)
-
-		pcall(function()
-			syde:updateLayout(Page, 7)
-		end)
+		queuePageLayout()
 
 
 
@@ -8455,17 +8490,20 @@ function syde:Init(library)
 				-- Connect AbsoluteSize change **only once**
 				if Options.Increment > 4 then
 					if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
-						local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-							BuildTicks(Slider.slide, Options)
-						end)
-						-- Tag the connection so we don't connect again
-						local marker = Instance.new("BoolValue")
-						marker.Name = "_ResizeConnection"
-						marker.Parent = Slider.slide.Ticks
-						marker:GetPropertyChangedSignal("Parent"):Connect(function()
-							if not marker.Parent then
-								conn:Disconnect()
-							end
+						pcall(function()
+							local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+								pcall(function()
+									BuildTicks(Slider.slide, Options)
+								end)
+							end)
+							local marker = Instance.new("BoolValue")
+							marker.Name = "_ResizeConnection"
+							marker.Parent = Slider.slide.Ticks
+							marker:GetPropertyChangedSignal("Parent"):Connect(function()
+								if not marker.Parent then
+									conn:Disconnect()
+								end
+							end)
 						end)
 					end
 				end
@@ -9714,56 +9752,62 @@ function syde:Init(library)
 				local HORIZONTAL_THRESHOLD = 260
 
 				local function updateHueValuesLayout()
-					if not HueValues.Visible then return end
+					pcall(function()
+						if not HueValues.Visible then return end
 
-					local width = HueValues.AbsoluteSize.X
-					local horizontal = width >= HORIZONTAL_THRESHOLD
+						local width = HueValues.AbsoluteSize.X
+						local horizontal = width >= HORIZONTAL_THRESHOLD
 
-					local x, y = 0, 0
-					local totalHeight = 0
+						local x, y = 0, 0
+						local totalHeight = 0
 
-					for _, item in ipairs(ITEMS) do
-						item.AnchorPoint = Vector2.new(1, 0)
+						for _, item in ipairs(ITEMS) do
+							item.AnchorPoint = Vector2.new(1, 0)
 
-						if horizontal then
-							item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
-							item.Position = UDim2.new(1, -x, 0, 0)
-							x += ITEM_WIDTH + GAP
-							totalHeight = ITEM_HEIGHT
-						else
-							item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
-							item.Position = UDim2.new(1, 0, 0, -y)
-							y += ITEM_HEIGHT + GAP
-							totalHeight = y
-						end
-					end
-
-					HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
-					HueValues.Position = UDim2.new(0.5, 0,1, -50)
-
-					if Open then
-						if data.Type == "Gradient" then
-							tweenservice:Create(
-								colorpicker,
-								TweenInfo.new(0.35, Enum.EasingStyle.Quart),
-								{ Size = UDim2.new(1, -35, 0, 305 + totalHeight) }
-							):Play()
-						else
-							tweenservice:Create(
-								colorpicker,
-								TweenInfo.new(0.35, Enum.EasingStyle.Quart),
-								{ Size = UDim2.new(1, -35, 0, 290 + totalHeight) }
-							):Play()
+							if horizontal then
+								item.Size = UDim2.new(0, ITEM_WIDTH, 0, ITEM_HEIGHT)
+								item.Position = UDim2.new(1, -x, 0, 0)
+								x += ITEM_WIDTH + GAP
+								totalHeight = ITEM_HEIGHT
+							else
+								item.Size = UDim2.new(1, -4, 0, ITEM_HEIGHT)
+								item.Position = UDim2.new(1, 0, 0, -y)
+								y += ITEM_HEIGHT + GAP
+								totalHeight = y
+							end
 						end
 
-					end
+						HueValues.Size = UDim2.new(1, -40, 0, totalHeight)
+						HueValues.Position = UDim2.new(0.5, 0,1, -50)
+
+						if Open then
+							if data.Type == "Gradient" then
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 305 + totalHeight) }
+								):Play()
+							else
+								tweenservice:Create(
+									colorpicker,
+									TweenInfo.new(0.35, Enum.EasingStyle.Quart),
+									{ Size = UDim2.new(1, -35, 0, 290 + totalHeight) }
+								):Play()
+							end
+
+						end
+					end)
 				end
 
-				HueValues:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateHueValuesLayout)
-				colorpicker:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateHueValuesLayout)
+				safeOnPropertyChanged(HueValues, "AbsoluteSize", updateHueValuesLayout)
+				safeOnPropertyChanged(colorpicker, "AbsoluteSize", updateHueValuesLayout)
 
 				colorpicker:SetAttribute("UpdateHueLayout", true)
-				colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(updateHueValuesLayout)
+				pcall(function()
+					colorpicker:GetAttributeChangedSignal("UpdateHueLayout"):Connect(function()
+						updateHueValuesLayout()
+					end)
+				end)
 
 				task.defer(updateHueValuesLayout)
 			end
@@ -10990,7 +11034,7 @@ function syde:CreateHub(config)
 			Title = title or brand.Name,
 			SubText = brand.Subtitle,
 			Home = {
-				Enabled = true,
+				Enabled = false,
 				hTitle = title or brand.Name,
 				hSubText = brand.Subtitle,
 				profileImage = brand.Logo,
