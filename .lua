@@ -50,7 +50,7 @@ local function getParagraphContent(para)
 		end
 	end
 
-	for _, child in ipairs(para:GetDescendants()) do
+	for _, child in ipairs(safeGetDescendants(para)) do
 		if child:IsA("TextLabel") or child:IsA("TextBox") then
 			local name = child.Name:lower()
 			if name == "content" or name == "desc" or name == "body" or name == "text" or name == "value" then
@@ -61,7 +61,7 @@ local function getParagraphContent(para)
 		end
 	end
 
-	for _, child in ipairs(para:GetDescendants()) do
+	for _, child in ipairs(safeGetDescendants(para)) do
 		if (child:IsA("TextLabel") or child:IsA("TextBox")) and not isTitleLabel(child) then
 			return child
 		end
@@ -80,7 +80,7 @@ local function applyParagraphContent(para, paraContent, text)
 		paraContent.Visible = true
 	end
 	if para then
-		for _, child in ipairs(para:GetDescendants()) do
+		for _, child in ipairs(safeGetDescendants(para)) do
 			if (child:IsA("TextLabel") or child:IsA("TextBox")) and child ~= paraContent then
 				local name = child.Name:lower()
 				local parent = child.Parent
@@ -177,6 +177,19 @@ local function safeGetChildren(parent)
 		end
 	end)
 	return children
+end
+
+local function safeGetDescendants(parent)
+	local descendants = {}
+	if typeof(parent) ~= "Instance" then
+		return descendants
+	end
+	pcall(function()
+		for _, child in ipairs(parent:GetDescendants()) do
+			table.insert(descendants, child)
+		end
+	end)
+	return descendants
 end
 
 local inputservice =	game:GetService("InsertService")
@@ -6576,8 +6589,16 @@ function syde:Init(library)
 				function ParagraphSettings:Set(text, title)
 					deferParagraphUpdate(function()
 						setParagraphTitle(Para, title)
-						paraContent = applyParagraphContent(Para, paraContent, text)
-						scheduleParagraphResize(Para, paraContent, true)
+						if paraContent and paraContent.Parent then
+							pcall(function()
+								paraContent.RichText = true
+								paraContent.Text = text or ""
+								paraContent.Visible = true
+							end)
+						else
+							paraContent = applyParagraphContent(Para, paraContent, text)
+						end
+						scheduleParagraphResize(Para, paraContent, false)
 					end)
 				end
 
@@ -9406,8 +9427,16 @@ function syde:Init(library)
 			function ParagraphSettings:Set(text, title)
 				deferParagraphUpdate(function()
 					setParagraphTitle(Para, title)
-					paraContent = applyParagraphContent(Para, paraContent, text)
-					scheduleParagraphResize(Para, paraContent, true)
+					if paraContent and paraContent.Parent then
+						pcall(function()
+							paraContent.RichText = true
+							paraContent.Text = text or ""
+							paraContent.Visible = true
+						end)
+					else
+						paraContent = applyParagraphContent(Para, paraContent, text)
+					end
+					scheduleParagraphResize(Para, paraContent, false)
 				end)
 			end
 
