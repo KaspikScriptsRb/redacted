@@ -106,6 +106,10 @@ local function safeOnPropertyChanged(instance, property, callback)
 	if not instance or typeof(callback) ~= "function" then
 		return
 	end
+	-- GetObjects UI is Plugin-security: AbsoluteSize/AbsolutePosition signals throw.
+	if property == "AbsoluteSize" or property == "AbsolutePosition" then
+		property = "Size"
+	end
 	pcall(function()
 		instance:GetPropertyChangedSignal(property):Connect(function()
 			pcall(callback)
@@ -116,9 +120,50 @@ end
 local function safeGuiAlive(guiObject)
 	local alive = false
 	pcall(function()
-		alive = guiObject ~= nil and guiObject.Parent ~= nil
+		alive = typeof(guiObject) == "Instance" and guiObject:IsDescendantOf(game)
 	end)
 	return alive
+end
+
+local function guiAbsSize(gui)
+	if typeof(gui) ~= "Instance" or not gui:IsA("GuiObject") then
+		return Vector2.zero
+	end
+	local size = gui.Size
+	local parent = gui.Parent
+	local parentSize
+	if parent and parent:IsA("GuiObject") then
+		parentSize = guiAbsSize(parent)
+	else
+		local cam = workspace.CurrentCamera
+		parentSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
+	end
+	return Vector2.new(
+		size.X.Scale * parentSize.X + size.X.Offset,
+		size.Y.Scale * parentSize.Y + size.Y.Offset
+	)
+end
+
+local function guiAbsPos(gui)
+	local x, y = 0, 0
+	local node = gui
+	while typeof(node) == "Instance" and node:IsA("GuiObject") do
+		local parent = node.Parent
+		local parentSize
+		if parent and parent:IsA("GuiObject") then
+			parentSize = guiAbsSize(parent)
+		else
+			local cam = workspace.CurrentCamera
+			parentSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
+		end
+		local pos = node.Position
+		local size = guiAbsSize(node)
+		local anchor = node.AnchorPoint
+		x += pos.X.Scale * parentSize.X + pos.X.Offset - size.X * anchor.X
+		y += pos.Y.Scale * parentSize.Y + pos.Y.Offset - size.Y * anchor.Y
+		node = parent
+	end
+	return Vector2.new(x, y)
 end
 
 local inputservice =	game:GetService("InsertService")
@@ -480,13 +525,27 @@ end
 local function cleanupSydeUi(markerName)
 	disconnectRuntimeConnections()
 	cleanupBlurArtifacts()
-	for _, gui in coregui:GetChildren() do
-		if gui:IsA("ScreenGui") and gui:FindFirstChild(markerName) then
-			pcall(function()
-				gui:Destroy()
-			end)
+	local function destroyLoaderGuis(parent)
+		if not parent then
+			return
+		end
+		for _, gui in parent:GetChildren() do
+			if gui:IsA("ScreenGui") and (gui.Name == "sydeUILoader" or gui:FindFirstChild(markerName)) then
+				pcall(function()
+					gui:Destroy()
+				end)
+			end
 		end
 	end
+	destroyLoaderGuis(coregui)
+	pcall(function()
+		destroyLoaderGuis(game:GetService("CoreGui"))
+	end)
+	pcall(function()
+		if gethui then
+			destroyLoaderGuis(gethui())
+		end
+	end)
 end
 
 local syde = {
@@ -1221,7 +1280,7 @@ end
 -- calculate layout
 function Bento:Update()
 
-	local containerWidth = self.Container.AbsoluteSize.X
+	local containerWidth = guiAbsSize(self.Container).X
 
 	local normalItems = {}
 	local bottomItems = {}
@@ -1672,7 +1731,7 @@ function syde:updateLayout(container, spacing)
 	spacing = spacing or 5
 	local ok, err = pcall(function()
 	local yOffset = 0
-	local containerWidth = container.AbsoluteSize.X 
+	local containerWidth = guiAbsSize(container).X 
 
 	for _, v in ipairs(container:GetChildren()) do
 		if v:IsA('UIListLayout') then
@@ -1684,7 +1743,7 @@ function syde:updateLayout(container, spacing)
 		for _, child in ipairs(container:GetChildren()) do
 			if (child:IsA("Frame") or child:IsA("ImageLabel") or child:IsA("TextLabel") or child:IsA("TextButton")) and child.Visible then
 				tweenservice:Create(child, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 0, 0, yOffset)}):Play()
-				yOffset = yOffset + child.AbsoluteSize.Y + spacing
+				yOffset = yOffset + math.max(guiAbsSize(child).Y, child.Size.Y.Offset) + spacing
 			end
 		end
 	end
@@ -2578,8 +2637,13 @@ local function applyHomePresenceBranding(homeData)
 		end
 
 		local wallpaper = presence:FindFirstChild("wallpaper")
-		if wallpaper and homeData.profileImage then
-			wallpaper.Image = "rbxassetid://" .. homeData.profileImage
+		if wallpaper then
+			-- Keep the home wallpaper slot, but do not stamp the hub logo onto it.
+			-- The logo asset is a large translucent C and shows through tab pages.
+			if wallpaper:IsA("ImageLabel") or wallpaper:IsA("ImageButton") then
+				wallpaper.Image = ""
+				wallpaper.ImageTransparency = 1
+			end
 		end
 
 		local placeIdLabel = presence:FindFirstChild("PlaceID")
@@ -3357,11 +3421,10 @@ function syde:Init(library)
 	applyTitleBranding(Data.Title, Data.SubText)
 	if Data.Home.Enabled then
 		applyHomePresenceBranding(Data.Home)
-		if bindUiRefs() then
-			local homePage = pages:FindFirstChild("home")
-			if homePage then
-				homePage.Visible = false
-			end
+	elseif bindUiRefs() then
+		local homePage = pages:FindFirstChild("home")
+		if homePage then
+			homePage.Visible = false
 		end
 	end
 
@@ -3755,7 +3818,11 @@ function syde:Init(library)
 		local lines = {}
 		local gridBuilt = false
 
-		repeat task.wait() until graph.AbsoluteSize.X > 0
+		local graphWait = 0
+		repeat
+			task.wait()
+			graphWait += 1
+		until guiAbsSize(graph).X > 0 or graphWait > 120
 
 
 		local Players = game:GetService("Players")
@@ -3796,8 +3863,8 @@ function syde:Init(library)
 
 		local function createGrid()
 
-			local w = graph.AbsoluteSize.X
-			local h = graph.AbsoluteSize.Y
+			local w = guiAbsSize(graph).X
+			local h = guiAbsSize(graph).Y
 
 			local steps = 4
 
@@ -3842,8 +3909,8 @@ function syde:Init(library)
 			clear()
 			createGrid()
 
-			local w = graph.AbsoluteSize.X
-			local h = graph.AbsoluteSize.Y
+			local w = guiAbsSize(graph).X
+			local h = guiAbsSize(graph).Y
 
 			local step = w/(MAX_POINTS-1)
 
@@ -4893,11 +4960,16 @@ function syde:Init(library)
 					local ITEM_WIDTH = 120
 					local HORIZONTAL_THRESHOLD = 260
 
+					local hueLayoutBusy = false
 					local function updateHueValuesLayout()
+						if hueLayoutBusy then
+							return
+						end
+						hueLayoutBusy = true
 						pcall(function()
 							if not HueValues.Visible then return end
 
-							local width = HueValues.AbsoluteSize.X
+							local width = guiAbsSize(HueValues).X
 							local horizontal = width >= HORIZONTAL_THRESHOLD
 
 							local x, y = 0, 0
@@ -4930,10 +5002,11 @@ function syde:Init(library)
 								):Play()
 							end
 						end)
+						hueLayoutBusy = false
 					end
 
-					safeOnPropertyChanged(HueValues, "AbsoluteSize", updateHueValuesLayout)
-					safeOnPropertyChanged(colorpicker, "AbsoluteSize", updateHueValuesLayout)
+					safeOnPropertyChanged(HueValues, "Size", updateHueValuesLayout)
+					safeOnPropertyChanged(colorpicker, "Size", updateHueValuesLayout)
 
 					colorpicker:SetAttribute("UpdateHueLayout", true)
 					pcall(function()
@@ -6193,8 +6266,8 @@ function syde:Init(library)
 						-- wait for UI to size properly
 						task.wait()
 
-						local width = ticksFrame.AbsoluteSize.X
-						local height = ticksFrame.AbsoluteSize.Y
+						local width = guiAbsSize(ticksFrame).X
+						local height = guiAbsSize(ticksFrame).Y
 
 
 						local spacing = width / (tickCount - 1)
@@ -6238,7 +6311,7 @@ function syde:Init(library)
 					if Options.Increment > 4 then
 						if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
 							pcall(function()
-								local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+								local conn = Slider.slide.Ticks:GetPropertyChangedSignal("Size"):Connect(function()
 									pcall(function()
 										BuildTicks(Slider.slide, Options)
 									end)
@@ -7400,9 +7473,12 @@ function syde:Init(library)
 
 		Page.ChildAdded:Connect(function(child)
 			pcall(function()
-				if child and child:IsA("GuiObject") then
-					queuePageLayout()
+				if not child or not child:IsA("GuiObject") then
+					return
 				end
+				queuePageLayout()
+				safeOnPropertyChanged(child, "Size", queuePageLayout)
+				safeOnPropertyChanged(child, "Visible", queuePageLayout)
 			end)
 		end)
 
@@ -7410,6 +7486,7 @@ function syde:Init(library)
 			queuePageLayout()
 		end)
 
+		safeOnPropertyChanged(Page, "Size", queuePageLayout)
 		queuePageLayout()
 
 
@@ -7557,20 +7634,15 @@ function syde:Init(library)
 		local function HideHomeForTab()
 			tbdata.homeActive = false
 
-			if HomePage and HomePage.Visible then
-				-- hide immediately to prevent overlap flicker
-				HomePage.Visible = false  
-
-				-- optional: still tween background transparency for smoothness
-				pcall(function() 
-					HomePage.BackgroundTransparency = 1 
+			if HomePage then
+				pcall(function()
+					HomePage.Visible = false
+					HomePage.BackgroundTransparency = 1
 				end)
 			end
 
 			ApplyHomeButtonStyle(false)
 			window.pages.clipframe.Visible = true
-			--	window.pages.v0.Visible = true
-			--	window.pages.v1.Visible = true
 		end
 
 		if tbdata.first == 'Home' then
@@ -7601,12 +7673,7 @@ function syde:Init(library)
 		Tab.interact.MouseButton1Click:Connect(function()
 			if tbdata.first == tdata.Title then return end 
 
-			-- Hide Home if active
-			if Data.Home.Enabled then
-				if tbdata.homeActive then
-					HideHomeForTab()
-				end
-			end
+			HideHomeForTab()
 
 
 			local previous = tbdata.first
@@ -7626,7 +7693,7 @@ function syde:Init(library)
 
 			-- Hide all pages
 			for _, otherPage in ipairs(pages:GetChildren()) do
-				if otherPage:IsA("ScrollingFrame") then
+				if otherPage:IsA("ScrollingFrame") or otherPage.Name == "home" then
 					otherPage.Visible = false
 				end
 			end
@@ -7703,7 +7770,7 @@ function syde:Init(library)
 			end
 
 			-- hide the Home screen if we're jumping straight from it (e.g. via search)
-			if Data.Home.Enabled and tbdata.homeActive then
+			if tbdata.homeActive or (HomePage and HomePage.Visible) then
 				HideHomeForTab()
 			end
 
@@ -7712,7 +7779,7 @@ function syde:Init(library)
 
 			-- hide all pages
 			for _, page in ipairs(pages:GetChildren()) do
-				if page:IsA("ScrollingFrame") then
+				if page:IsA("ScrollingFrame") or page.Name == "home" then
 					page.Visible = false
 				end
 			end
@@ -8446,8 +8513,8 @@ function syde:Init(library)
 					-- wait for UI to size properly
 					task.wait()
 
-					local width = ticksFrame.AbsoluteSize.X
-					local height = ticksFrame.AbsoluteSize.Y
+					local width = guiAbsSize(ticksFrame).X
+					local height = guiAbsSize(ticksFrame).Y
 
 
 					local spacing = width / (tickCount - 1)
@@ -8491,7 +8558,7 @@ function syde:Init(library)
 				if Options.Increment > 4 then
 					if not Slider.slide.Ticks:FindFirstChild("_ResizeConnection") then
 						pcall(function()
-							local conn = Slider.slide.Ticks:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+							local conn = Slider.slide.Ticks:GetPropertyChangedSignal("Size"):Connect(function()
 								pcall(function()
 									BuildTicks(Slider.slide, Options)
 								end)
@@ -9751,11 +9818,16 @@ function syde:Init(library)
 				local ITEM_WIDTH = 120
 				local HORIZONTAL_THRESHOLD = 260
 
+				local hueLayoutBusy = false
 				local function updateHueValuesLayout()
+					if hueLayoutBusy then
+						return
+					end
+					hueLayoutBusy = true
 					pcall(function()
 						if not HueValues.Visible then return end
 
-						local width = HueValues.AbsoluteSize.X
+						local width = guiAbsSize(HueValues).X
 						local horizontal = width >= HORIZONTAL_THRESHOLD
 
 						local x, y = 0, 0
@@ -9797,10 +9869,11 @@ function syde:Init(library)
 
 						end
 					end)
+					hueLayoutBusy = false
 				end
 
-				safeOnPropertyChanged(HueValues, "AbsoluteSize", updateHueValuesLayout)
-				safeOnPropertyChanged(colorpicker, "AbsoluteSize", updateHueValuesLayout)
+				safeOnPropertyChanged(HueValues, "Size", updateHueValuesLayout)
+				safeOnPropertyChanged(colorpicker, "Size", updateHueValuesLayout)
 
 				colorpicker:SetAttribute("UpdateHueLayout", true)
 				pcall(function()
@@ -11034,7 +11107,7 @@ function syde:CreateHub(config)
 			Title = title or brand.Name,
 			SubText = brand.Subtitle,
 			Home = {
-				Enabled = false,
+				Enabled = true,
 				hTitle = title or brand.Name,
 				hSubText = brand.Subtitle,
 				profileImage = brand.Logo,
