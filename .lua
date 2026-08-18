@@ -432,8 +432,14 @@ end
 
 if update then return end
 
-local Library =         game:GetObjects("rbxassetid://123800669522471")[1]
-local Loader =          game:GetObjects("rbxassetid://110221114597158")[1]
+local Library
+local Loader
+pcall(function()
+	Library = game:GetObjects("rbxassetid://123800669522471")[1]
+end)
+pcall(function()
+	Loader = game:GetObjects("rbxassetid://110221114597158")[1]
+end)
 
 local resizing =        false
 local screenSize =      workspace.CurrentCamera.ViewportSize
@@ -442,8 +448,12 @@ local dragOffset =        255
 local dragOffsetMobile =  150
 local camera =          workspace.CurrentCamera
 
-Library.Enabled = false
-Loader.Enabled = false
+if Library then
+	Library.Enabled = false
+end
+if Loader then
+	Loader.Enabled = false
+end
 
 local ui = Library
 local window = ui and ui:FindFirstChild("main")
