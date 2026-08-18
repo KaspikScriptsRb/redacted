@@ -6258,9 +6258,14 @@ function syde:Init(library)
 				for _, Options in ipairs(data.Sliders) do
 					local Slider = window.settings.pages.page.Slider.slideholder.slider:Clone()
 
+					local sliderIncrement = Options.Increment
+					if typeof(sliderIncrement) ~= "number" or sliderIncrement <= 0 then
+						sliderIncrement = 1
+					end
+
 					Options = {
 						Title = Options.Title or "Slider";
-						Increment = Options.Increment or 1;
+						Increment = sliderIncrement;
 						Range = Options.Range or {0, 100};
 						StarterValue = Options.StarterValue or 16;
 						CallBack = Options.CallBack;
@@ -8520,13 +8525,19 @@ function syde:Init(library)
 			for _, Options in ipairs(data.Sliders) do
 				local Slider = pages.page.Slider.slideholder.slider:Clone()
 
+				local sliderIncrement = Options.Increment
+				if typeof(sliderIncrement) ~= "number" or sliderIncrement <= 0 then
+					sliderIncrement = 1
+				end
+
 				Options = {
 					Title = Options.Title or "Slider";
-					Increment = Options.Increment or 1;
+					Increment = sliderIncrement;
 					Range = Options.Range or {0, 100};
 					StarterValue = Options.StarterValue or 16;
 					CallBack = Options.CallBack;
 					Flag = Options.Flag;
+					Config = Options.Config;
 				}
 
 				Slider.Name = Options.Title
@@ -10893,6 +10904,19 @@ function syde:CreateHub(config)
 	local function makeFlag(tabId, mod, opt)
 		return (tabId .. "_" .. mod.name .. "_" .. (opt and opt.label or "")):gsub("%s+", "_")
 	end
+	local function resolveSliderIncrement(opt)
+		local inc = opt.increment
+		if inc == nil then
+			inc = opt.step
+		end
+		if inc == nil then
+			inc = opt.Increment
+		end
+		if typeof(inc) ~= "number" or inc <= 0 then
+			inc = 1
+		end
+		return inc
+	end
 	local function buildOption(tab, tabId, mod, opt)
 		local flagName = makeFlag(tabId, mod, opt)
 		if opt.type == "button" then
@@ -10924,6 +10948,7 @@ function syde:CreateHub(config)
 			if starterVal == nil then
 				starterVal = opt.min or 0
 			end
+			local sliderIncrement = resolveSliderIncrement(opt)
 			tab:Slider({
 				Title = opt.label,
 				Description = opt.desc or "",
@@ -10931,7 +10956,7 @@ function syde:CreateHub(config)
 					{
 						Title = opt.label,
 						Range = { opt.min or 0, opt.max or 100 },
-						Increment = opt.increment or 1,
+						Increment = sliderIncrement,
 						StarterValue = starterVal,
 						Config = true,
 						Flag = flagName,
