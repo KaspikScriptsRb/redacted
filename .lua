@@ -77,6 +77,21 @@ local function applyParagraphContent(para, paraContent, text)
 	if paraContent then
 		paraContent.RichText = true
 		paraContent.Text = text or ""
+		paraContent.Visible = true
+	end
+	if para then
+		for _, child in ipairs(para:GetDescendants()) do
+			if (child:IsA("TextLabel") or child:IsA("TextBox")) and child ~= paraContent then
+				local name = child.Name:lower()
+				local parent = child.Parent
+				local isTitle = name == "title"
+					or (parent and parent.Name:lower() == "frame" and parent:FindFirstChild("title") == child)
+				if not isTitle then
+					child.Text = ""
+					child.Visible = false
+				end
+			end
+		end
 	end
 	return paraContent
 end
@@ -100,6 +115,80 @@ local coregui =         (gethui and gethui()) or game:GetService("CoreGui")
 
 local PARAGRAPH_PADDING = 18
 local PARAGRAPH_CONTENT_EXTRA = 10
+
+local function measureLabelTextHeight(label, fallback)
+	fallback = fallback or 16
+	local height = fallback
+	if not label then
+		return height
+	end
+	pcall(function()
+		if label.TextBounds.Y > 0 then
+			height = label.TextBounds.Y
+		elseif label.TextSize then
+			height = label.TextSize + 4
+		end
+	end)
+	return height
+end
+
+local function bindDescLabelResize(descLabel, container, titleYOffset)
+	if not descLabel or not container then
+		return
+	end
+	titleYOffset = titleYOffset or 10
+	local function updateSize()
+		pcall(function()
+			local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+			local titleHeight = 0
+			local title = container:FindFirstChild("title")
+			if title and title:IsA("GuiObject") then
+				titleHeight = title.Size.Y.Offset
+			end
+			local newDescSize = UDim2.new(1, -150, 0, textHeight)
+			local newButtonSize = UDim2.new(container.Size.X.Scale, container.Size.X.Offset, 0, titleHeight + textHeight + titleYOffset)
+			tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+			tweenservice:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize }):Play()
+		end)
+	end
+	pcall(updateSize)
+	pcall(function()
+		descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			task.defer(updateSize)
+		end)
+	end)
+end
+
+local function bindSliderDescResize(descLabel, slider)
+	if not descLabel or not slider then
+		return
+	end
+	local function updateSize()
+		pcall(function()
+			local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+			local newDescSize = UDim2.new(1, -150, 0, textHeight)
+			local slideholder = slider:FindFirstChild("slideholder")
+			local slideholderHeight = 0
+			if slideholder and slideholder:IsA("GuiObject") then
+				slideholderHeight = slideholder.AbsoluteSize.Y
+			end
+			local titleHeight = 0
+			local title = slider:FindFirstChild("title")
+			if title and title:IsA("GuiObject") then
+				titleHeight = title.Size.Y.Offset
+			end
+			local newButtonSize = UDim2.new(slider.Size.X.Scale, slider.Size.X.Offset, 0, slideholderHeight + titleHeight + textHeight + 15)
+			tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+			tweenservice:Create(slider, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize }):Play()
+		end)
+	end
+	pcall(updateSize)
+	pcall(function()
+		descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			task.defer(updateSize)
+		end)
+	end)
+end
 
 local function getParagraphTitleHeight(para)
 	local height = 34
@@ -4326,28 +4415,7 @@ function syde:Init(library)
 						descLabel.Text = data.Desc
 						descLabel.Visible = true
 						descLabel.TextWrapped = true
-
-						local function updateSize()
-							local textSize = textservice:GetTextSize(
-								descLabel.Text,
-								descLabel.TextSize,
-								descLabel.Font,
-								Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-							)
-
-							local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-							local newButtonSize = UDim2.new(button.Size.X.Scale, button.Size.X.Offset, 0, button.title.Size.Y.Offset + textSize.Y + 10)
-							tweenservice:Create(button.UICorner, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { CornerRadius = UDim.new(0,20) }):Play()
-							local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-							descTween:Play()
-
-							local buttonTween = tweenservice:Create(button, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-							buttonTween:Play()
-						end
-
-						updateSize()
-
-						descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+						bindDescLabelResize(descLabel, button, 10)
 					else
 						descLabel.Visible = false
 					end
@@ -4437,28 +4505,7 @@ function syde:Init(library)
 						descLabel.Text = data.Desc
 						descLabel.Visible = true
 						descLabel.TextWrapped = true
-
-						local function updateSize()
-							local textSize = textservice:GetTextSize(
-								descLabel.Text,
-								descLabel.TextSize,
-								descLabel.Font,
-								Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-							)
-
-							local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-							local newButtonSize = UDim2.new(toggle.Size.X.Scale, toggle.Size.X.Offset, 0, toggle.title.Size.Y.Offset + textSize.Y + 10) -- Adding extra padding
-							tweenservice:Create(toggle.UICorner, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { CornerRadius = UDim.new(0,20) }):Play()
-							local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-							descTween:Play()
-
-							local ToggleTween = tweenservice:Create(toggle, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-							ToggleTween:Play()
-						end
-
-						updateSize()
-
-						descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+						bindDescLabelResize(descLabel, toggle, 10)
 					else
 						descLabel.Visible = false
 					end
@@ -6314,28 +6361,7 @@ function syde:Init(library)
 						descLabel.Text = data.Desc
 						descLabel.Visible = true
 						descLabel.TextWrapped = true
-
-						local function updateSize()
-							local textSize = textservice:GetTextSize(
-								descLabel.Text,
-								descLabel.TextSize,
-								descLabel.Font,
-								Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-							)
-
-							local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-							local newButtonSize = UDim2.new(slider.Size.X.Scale, slider.Size.X.Offset, 0,slider.slideholder.AbsoluteSize.Y + slider.title.Size.Y.Offset + textSize.Y + 15) -- Adding extra padding
-
-							local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-							descTween:Play()
-
-							local ToggleTween = tweenservice:Create(slider, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-							ToggleTween:Play()
-						end
-
-						updateSize()
-
-						descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+						bindSliderDescResize(descLabel, slider)
 					else
 						descLabel.Visible = false
 					end
@@ -6373,9 +6399,11 @@ function syde:Init(library)
 
 				updateSize(false)
 
-				paraContent:GetPropertyChangedSignal("TextBounds"):Connect(function()
-					task.defer(function()
-						updateSize(false)
+				pcall(function()
+					paraContent:GetPropertyChangedSignal("Text"):Connect(function()
+						task.defer(function()
+							updateSize(false)
+						end)
 					end)
 				end)
 
@@ -6434,14 +6462,15 @@ function syde:Init(library)
 
 					textBox.Size = UDim2.new(1, -60, 0, defaultHeight + 40)
 
-					local textSize = game:GetService("TextService"):GetTextSize(
-						textBox.Text, textBox.TextSize, textBox.Font, Vector2.new(textBox.AbsoluteSize.X, math.huge)
-					)
+					local textHeight = defaultHeight
+					pcall(function()
+						textHeight = measureLabelTextHeight(textBox, defaultHeight)
+					end)
 
 					if textBox.Text == "" then
 						textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
 					else
-						local newHeight = math.min(textSize.Y + 18, 120 + 50)
+						local newHeight = math.min(textHeight + 18, 120 + 50)
 						textBox.Size = UDim2.new(1, -60, 0, newHeight)
 
 					end
@@ -7988,28 +8017,7 @@ function syde:Init(library)
 					descLabel.Text = data.Desc
 					descLabel.Visible = true
 					descLabel.TextWrapped = true
-
-					local function updateSize()
-						local textSize = textservice:GetTextSize(
-							descLabel.Text,
-							descLabel.TextSize,
-							descLabel.Font,
-							Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-						)
-
-						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-						local newButtonSize = UDim2.new(button.Size.X.Scale, button.Size.X.Offset, 0, button.title.Size.Y.Offset + textSize.Y + 10)
-
-						local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-						descTween:Play()
-
-						local buttonTween = tweenservice:Create(button, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-						buttonTween:Play()
-					end
-
-					updateSize()
-
-					descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+					bindDescLabelResize(descLabel, button, 10)
 				else
 					descLabel.Visible = false
 				end
@@ -8100,38 +8108,7 @@ function syde:Init(library)
 					descLabel.Text = data.Desc
 					descLabel.Visible = true
 					descLabel.TextWrapped = true
-
-					local function updateSize()
-						local textSize = Vector2.new(descLabel.AbsoluteSize.X, descLabel.TextSize + 4)
-						local okSize, measured = pcall(function()
-							return textservice:GetTextSize(
-								descLabel.Text,
-								descLabel.TextSize,
-								descLabel.Font,
-								Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-							)
-						end)
-						if okSize and measured then
-							textSize = measured
-						end
-
-						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-						local newButtonSize = UDim2.new(toggle.Size.X.Scale, toggle.Size.X.Offset, 0, toggle.title.Size.Y.Offset + textSize.Y + 10)
-
-						local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-						descTween:Play()
-
-						local ToggleTween = tweenservice:Create(toggle, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-						ToggleTween:Play()
-					end
-
-					pcall(updateSize)
-
-					pcall(function()
-						descLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-							pcall(updateSize)
-						end)
-					end)
+					bindDescLabelResize(descLabel, toggle, 10)
 				else
 					descLabel.Visible = false
 				end
@@ -8638,28 +8615,7 @@ function syde:Init(library)
 					descLabel.Text = data.Desc
 					descLabel.Visible = true
 					descLabel.TextWrapped = true
-
-					local function updateSize()
-						local textSize = textservice:GetTextSize(
-							descLabel.Text,
-							descLabel.TextSize,
-							descLabel.Font,
-							Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-						)
-
-						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-						local newButtonSize = UDim2.new(slider.Size.X.Scale, slider.Size.X.Offset, 0,slider.slideholder.AbsoluteSize.Y + slider.title.Size.Y.Offset + textSize.Y + 15) -- Adding extra padding
-
-						local descTween = tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize })
-						descTween:Play()
-
-						local ToggleTween = tweenservice:Create(slider, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newButtonSize })
-						ToggleTween:Play()
-					end
-
-					updateSize()
-
-					descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSize)
+					bindSliderDescResize(descLabel, slider)
 				else
 					descLabel.Visible = false
 				end
@@ -8687,16 +8643,25 @@ function syde:Init(library)
 			KeyBind:SetAttribute("Searchable", true)
 
 			KeyBind.Bind.v.Text = data.Key and data.Key.Name or "NONE"
-			tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint ), {Size = UDim2.new(0, KeyBind.Bind.v.TextBounds.X + 30, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
+			local function resizeKeybindButton()
+				pcall(function()
+					local width = KeyBind.Bind.v.TextBounds.X + 30
+					tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint), {Size = UDim2.new(0, width, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
+				end)
+			end
+
+			resizeKeybindButton()
+
+			pcall(function()
+				KeyBind.Bind.v:GetPropertyChangedSignal("Text"):Connect(function()
+					task.defer(resizeKeybindButton)
+				end)
+			end)
 
 			KeyBind.interact.MouseButton1Click:Connect(function()
 				KeyBind.Bind.v.Text = '...'
 				tweenservice:Create(KeyBind.Bind.UIStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Thickness = 1}):Play()
 				data.WaitingForKey = true
-			end)
-
-			KeyBind.Bind.v:GetPropertyChangedSignal('TextBounds'):Connect(function()
-				tweenservice:Create(KeyBind.Bind, TweenInfo.new(0.55, Enum.EasingStyle.Quint ), {Size = UDim2.new(0, KeyBind.Bind.v.TextBounds.X + 30, 0, KeyBind.Bind.Size.Y.Offset)}):Play()
 			end)
 
 			local function SetKeybind(keyCode)
@@ -8801,21 +8766,31 @@ function syde:Init(library)
 					descLabel.TextWrapped = true
 
 					local function updateDescSize()
-						local textSize = game:GetService("TextService"):GetTextSize(
-							descLabel.Text,
-							descLabel.TextSize,
-							descLabel.Font,
-							Vector2.new(descLabel.AbsoluteSize.X, math.huge)
-						)
-
-						local newDescSize = UDim2.new(1, -150, 0, textSize.Y)
-						local newInputSize = UDim2.new(textinput.Size.X.Scale, textinput.Size.X.Offset, 0, textinput.title.Size.Y.Offset + textSize.Y + textinput.TextFrame.Size.Y.Offset + 20)
-						tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
-						tweenservice:Create(textinput, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newInputSize }):Play()
+						pcall(function()
+							local textHeight = measureLabelTextHeight(descLabel, descLabel.TextSize + 4)
+							local newDescSize = UDim2.new(1, -150, 0, textHeight)
+							local textFrame = textinput:FindFirstChild("TextFrame")
+							local textFrameHeight = 0
+							if textFrame and textFrame:IsA("GuiObject") then
+								textFrameHeight = textFrame.Size.Y.Offset
+							end
+							local titleHeight = 0
+							local title = textinput:FindFirstChild("title")
+							if title and title:IsA("GuiObject") then
+								titleHeight = title.Size.Y.Offset
+							end
+							local newInputSize = UDim2.new(textinput.Size.X.Scale, textinput.Size.X.Offset, 0, titleHeight + textHeight + textFrameHeight + 20)
+							tweenservice:Create(descLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newDescSize }):Play()
+							tweenservice:Create(textinput, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Size = newInputSize }):Play()
+						end)
 					end
 
-					updateDescSize()
-					descLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateDescSize)
+					pcall(updateDescSize)
+					pcall(function()
+						descLabel:GetPropertyChangedSignal("Text"):Connect(function()
+							task.defer(updateDescSize)
+						end)
+					end)
 				else
 					descLabel.Visible = false
 				end
@@ -8838,14 +8813,15 @@ function syde:Init(library)
 
 				textBox.Size = UDim2.new(1, -60, 0, defaultHeight + 40)
 
-				local textSize = game:GetService("TextService"):GetTextSize(
-					textBox.Text, textBox.TextSize, textBox.Font, Vector2.new(textBox.AbsoluteSize.X, math.huge)
-				)
+				local textHeight = defaultHeight
+				pcall(function()
+					textHeight = measureLabelTextHeight(textBox, defaultHeight)
+				end)
 
 				if textBox.Text == "" then
 					textBox.Size = UDim2.new(1, -60, 0, math.max(defaultHeight))
 				else
-					local newHeight = math.min(textSize.Y + 18, 120 + 50)
+					local newHeight = math.min(textHeight + 18, 120 + 50)
 					textBox.Size = UDim2.new(1, -60, 0, newHeight)
 
 				end
@@ -9252,9 +9228,11 @@ function syde:Init(library)
 
 			updateSize(false)
 
-			paraContent:GetPropertyChangedSignal("TextBounds"):Connect(function()
-				task.defer(function()
-					updateSize(false)
+			pcall(function()
+				paraContent:GetPropertyChangedSignal("Text"):Connect(function()
+					task.defer(function()
+						updateSize(false)
+					end)
 				end)
 			end)
 
