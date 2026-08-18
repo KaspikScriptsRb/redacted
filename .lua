@@ -683,6 +683,46 @@ function syde:RoundTo(num, decimals)
 	return math.floor(num * mult + 0.5) / mult
 end
 
+function syde:ResolveSliderIncrement(options)
+	if not options then
+		return 0.1
+	end
+
+	local inc = options.Increment or options.increment or options.step
+	if typeof(inc) == "number" and inc > 0 then
+		return inc
+	end
+
+	local minVal = tonumber(options.min)
+	local maxVal = tonumber(options.max)
+	if options.Range then
+		minVal = minVal or tonumber(options.Range[1])
+		maxVal = maxVal or tonumber(options.Range[2])
+	end
+	minVal = minVal or 0
+	maxVal = maxVal or 100
+
+	local starterVal = tonumber(options.StarterValue) or tonumber(options.value) or minVal
+	local range = math.abs(maxVal - minVal)
+
+	local function hasFraction(n)
+		return math.abs(n - math.floor(n + 1e-9)) > 1e-6
+	end
+
+	if hasFraction(minVal) or hasFraction(maxVal) or hasFraction(starterVal) or range <= 5 then
+		if range <= 1 then
+			return 0.05
+		elseif range <= 5 then
+			return 0.1
+		elseif range <= 20 then
+			return 0.5
+		end
+		return 0.1
+	end
+
+	return 1
+end
+
 -- Copy text to the clipboard across common executor globals. Returns true on success.
 function syde:SetClipboard(text)
 	local fn = setclipboard or toclipboard or set_clipboard or writeclipboard or (syn and syn.write_clipboard)
@@ -6258,10 +6298,7 @@ function syde:Init(library)
 				for _, Options in ipairs(data.Sliders) do
 					local Slider = window.settings.pages.page.Slider.slideholder.slider:Clone()
 
-					local sliderIncrement = Options.Increment
-					if typeof(sliderIncrement) ~= "number" or sliderIncrement <= 0 then
-						sliderIncrement = 1
-					end
+					local sliderIncrement = syde:ResolveSliderIncrement(Options)
 
 					Options = {
 						Title = Options.Title or "Slider";
@@ -8525,10 +8562,7 @@ function syde:Init(library)
 			for _, Options in ipairs(data.Sliders) do
 				local Slider = pages.page.Slider.slideholder.slider:Clone()
 
-				local sliderIncrement = Options.Increment
-				if typeof(sliderIncrement) ~= "number" or sliderIncrement <= 0 then
-					sliderIncrement = 1
-				end
+				local sliderIncrement = syde:ResolveSliderIncrement(Options)
 
 				Options = {
 					Title = Options.Title or "Slider";
@@ -10904,14 +10938,8 @@ function syde:CreateHub(config)
 	local function makeFlag(tabId, mod, opt)
 		return (tabId .. "_" .. mod.name .. "_" .. (opt and opt.label or "")):gsub("%s+", "_")
 	end
-	-- Slider step: set opt.increment, opt.step, or opt.Increment in CreateModule opts.
-	-- Example: { type = "slider", min = 0.05, max = 1, increment = 0.05, ... }
 	local function resolveSliderIncrement(opt)
-		local inc = opt.increment or opt.step or opt.Increment
-		if typeof(inc) == "number" and inc > 0 then
-			return inc
-		end
-		return 0.1
+		return syde:ResolveSliderIncrement(opt)
 	end
 	local function buildOption(tab, tabId, mod, opt)
 		local flagName = makeFlag(tabId, mod, opt)
