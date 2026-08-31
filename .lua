@@ -4221,26 +4221,23 @@ function syde:Init(library)
 		
 		local Players = game:GetService("Players")
 
-		local label = window.pages.home.general.Quick.Player.Frame.TextLabel -- put script inside TextLabel
-
 		local function update()
-
-			local current =
-				#Players:GetPlayers()
-
-			local max =
-				Players.MaxPlayers
-
-			label.Text =
-				current.." / "..max
-
+			pcall(function()
+				if not label or not label.Parent then return end
+				local current = #Players:GetPlayers()
+				local max = Players.MaxPlayers
+				label.Text = current .. " / " .. max
+			end)
 		end
-
 
 		update()
 
-		Players.PlayerAdded:Connect(update)
-		Players.PlayerRemoving:Connect(update)
+		Players.PlayerAdded:Connect(function()
+			pcall(update)
+		end)
+		Players.PlayerRemoving:Connect(function()
+			pcall(update)
+		end)
 		
 		local QuickPlay = window.pages.home.general.Quick.QuickPlay
 
@@ -7788,15 +7785,19 @@ function syde:Init(library)
 		local function HideHomeForTab()
 			tbdata.homeActive = false
 
-			if HomePage then
-				pcall(function()
+			pcall(function()
+				if HomePage then
 					HomePage.Visible = false
 					HomePage.BackgroundTransparency = 1
-				end)
-			end
+				end
+			end)
 
 			ApplyHomeButtonStyle(false)
-			window.pages.clipframe.Visible = true
+			pcall(function()
+				if window and window.pages and window.pages:FindFirstChild("clipframe") then
+					window.pages.clipframe.Visible = true
+				end
+			end)
 		end
 
 		if tbdata.first == 'Home' then
