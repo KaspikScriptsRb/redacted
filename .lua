@@ -7025,35 +7025,48 @@ function syde:Init(library)
 		})
 
 		a:Toggle({
-			Title = 'Wallpaper';
-			Description = 'Displays personalized wallpaper';
-			Value = LockToScreen,
+			Title = 'Wallpaper',
+			Description = 'Displays personalized wallpaper',
+			Value = false,
 			CallBack = function (v)
 				if v then
-					window.wallpaper.Visible = true
-					window.pages.clipframe.v0.Visible = false
-					window.pages.clipframe.v1.Visible = false
-
-					window.pages.v0.Visible = false
-					window.pages.v1.Visible = false
-					window.wallpaper.ison.Value = true
+					pcall(function()
+						window.wallpaper.Visible = true
+						window.wallpaper.ZIndex = 1
+						if window.wallpaper:IsA("ImageLabel") then
+							window.wallpaper.ImageTransparency = 0
+						end
+						window.BackgroundTransparency = 1
+						if window:FindFirstChild("pages") then
+							window.pages.BackgroundTransparency = 1
+							if window.pages:FindFirstChild("clipframe") then
+								window.pages.clipframe.BackgroundTransparency = 1
+								if window.pages.clipframe:FindFirstChild("v0") then window.pages.clipframe.v0.Visible = false end
+								if window.pages.clipframe:FindFirstChild("v1") then window.pages.clipframe.v1.Visible = false end
+							end
+							if window.pages:FindFirstChild("v0") then window.pages.v0.Visible = false end
+							if window.pages:FindFirstChild("v1") then window.pages.v1.Visible = false end
+						end
+						if window.wallpaper:FindFirstChild("ison") then
+							window.wallpaper.ison.Value = true
+						end
+					end)
 				else
-					window.wallpaper.Visible = false
-
-					window.wallpaper.ison.Value = false
-
-					if bluron then
-						window.pages.clipframe.v0.Visible = false
-						window.pages.clipframe.v1.Visible = false
-						window.pages.v0.Visible = false
-						window.pages.v1.Visible = false
-					else
-						window.pages.clipframe.v0.Visible = true
-						window.pages.clipframe.v1.Visible = true
-
-						window.pages.v0.Visible = true
-						window.pages.v1.Visible = true
-					end
+					pcall(function()
+						window.wallpaper.Visible = false
+						window.BackgroundTransparency = bluron and 0.45 or 0
+						if window.wallpaper:FindFirstChild("ison") then
+							window.wallpaper.ison.Value = false
+						end
+						if not bluron and window:FindFirstChild("pages") then
+							if window.pages:FindFirstChild("clipframe") then
+								if window.pages.clipframe:FindFirstChild("v0") then window.pages.clipframe.v0.Visible = true end
+								if window.pages.clipframe:FindFirstChild("v1") then window.pages.clipframe.v1.Visible = true end
+							end
+							if window.pages:FindFirstChild("v0") then window.pages.v0.Visible = true end
+							if window.pages:FindFirstChild("v1") then window.pages.v1.Visible = true end
+						end
+					end)
 				end
 			end,
 			SFlag = 'WALLP',
@@ -7071,6 +7084,15 @@ function syde:Init(library)
 					local assetUrl = "rbxassetid://" .. id
 					pcall(function()
 						window.wallpaper.Image = assetUrl
+						window.wallpaper.ImageTransparency = 0
+						window.wallpaper.Visible = true
+						window.BackgroundTransparency = 1
+						if window:FindFirstChild("pages") then
+							window.pages.BackgroundTransparency = 1
+							if window.pages:FindFirstChild("clipframe") then
+								window.pages.clipframe.BackgroundTransparency = 1
+							end
+						end
 					end)
 					syde:Toast({
 						Content = "Wallpaper applied: " .. id
