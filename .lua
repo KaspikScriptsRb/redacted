@@ -6482,7 +6482,9 @@ function syde:Init(library)
 					syde:AddConnection(userinput.InputEnded, function(input, processed)
 						if input.UserInputType == Enum.UserInputType.MouseButton1  or input.UserInputType == Enum.UserInputType.Touch then
 							dragging = false
-							tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+							pcall(function()
+								tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+							end)
 						end
 					end)
 
@@ -7058,14 +7060,20 @@ function syde:Init(library)
 		})
 
 		a:TextInput({
-			Title = 'Wallpaper ID';
-			NumberOnly = true;
-			PlaceHolder = 'Input your wallpaper ID here.';
-			CallBack = function (v)
-				if v then
-					window.wallpaper.Image = 'rbxassetid://'..v
+			Title = 'Wallpaper ID',
+			NumbersOnly = false,
+			ClearOnLost = false,
+			PlaceHolder = 'Enter ID or rbxassetid://...',
+			CallBack = function(v)
+				if not v or v == "" then return end
+				local id = tostring(v):match("%d+")
+				if id and id ~= "" then
+					local assetUrl = "rbxassetid://" .. id
+					pcall(function()
+						window.wallpaper.Image = assetUrl
+					end)
 					syde:Toast({
-						Content = 'Wallpaper applied.'
+						Content = "Wallpaper applied: " .. id
 					})
 				end
 			end
@@ -7663,19 +7671,24 @@ function syde:Init(library)
 		local HomePage = (window and window.pages and window.pages.home) and window.pages.home or nil
 
 		local function ApplyHomeButtonStyle(isActive)
-			if not HomeButton or not HomeButton.homeicon:FindFirstChild("ImageLabel") then
-				return
-			end
+			pcall(function()
+				if not HomeButton then
+					return
+				end
+				local homeicon = HomeButton:FindFirstChild("homeicon")
+				local img = homeicon and homeicon:FindFirstChild("ImageLabel")
+				if not img then
+					return
+				end
 
-			if isActive then
-				--	tweenservice:Create(HomeButton.text, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0 }):Play()
-				tweenservice:Create(HomeButton.homeicon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.45 }):Play()
-				tweenservice:Create(HomeButton.homeicon.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
-			else
-				--	tweenservice:Create(HomeButton.text, TweenInfo.new(1, Enum.EasingStyle.Exponential), { TextTransparency = 0.67 }):Play()
-				tweenservice:Create(HomeButton.homeicon, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.85 }):Play()
-				tweenservice:Create(HomeButton.homeicon.ImageLabel, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.67 }):Play()
-			end
+				if isActive then
+					tweenservice:Create(homeicon, TweenInfo.new(1, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.45 }):Play()
+					tweenservice:Create(img, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0 }):Play()
+				else
+					tweenservice:Create(homeicon, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), { BackgroundTransparency = 0.85 }):Play()
+					tweenservice:Create(img, TweenInfo.new(1, Enum.EasingStyle.Exponential), { ImageTransparency = 0.67 }):Play()
+				end
+			end)
 		end
 
 		local isInit = true
@@ -8759,7 +8772,9 @@ function syde:Init(library)
 				syde:AddConnection(userinput.InputEnded, function(input, processed)
 					if input.UserInputType == Enum.UserInputType.MouseButton1  or input.UserInputType == Enum.UserInputType.Touch then
 						dragging = false
-						tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+						pcall(function()
+							tweenservice:Create(Slider.Title, TweenInfo.new( 0.5, Enum.EasingStyle.Exponential ), { TextTransparency = 0.6 }):Play()
+						end)
 					end
 				end)
 
